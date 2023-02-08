@@ -20,6 +20,11 @@ struct pkvm_ptdev {
 	struct pkvm_pgtable vpgt;
 	/* Represents the page table maintained by pKVM */
 	struct pkvm_pgtable *pgt;
+	/* Shadow page table for the vpgt used in legacy IOMMU mode */
+	struct pkvm_pgtable *spgt;
+
+	/* Protects updates of pgt pointer */
+	pkvm_spinlock_t lock;
 
 	int shadow_vm_handle;
 	struct list_head vm_node;
@@ -30,7 +35,7 @@ struct pkvm_ptdev *pkvm_get_ptdev(u16 bdf, u32 pasid);
 void pkvm_put_ptdev(struct pkvm_ptdev *ptdev);
 void pkvm_setup_ptdev_vpgt(struct pkvm_ptdev *ptdev, unsigned long root_gpa,
 			   struct pkvm_mm_ops *mm_ops, struct pkvm_pgtable_ops *paging_ops,
-			   struct pkvm_pgtable_cap *cap);
+			   struct pkvm_pgtable_cap *cap, bool shadowed);
 void pkvm_setup_ptdev_did(struct pkvm_ptdev *ptdev, u16 did);
 void pkvm_detach_ptdev(struct pkvm_ptdev *ptdev, struct pkvm_shadow_vm *vm);
 int pkvm_attach_ptdev(u16 bdf, u32 pasid, struct pkvm_shadow_vm *vm);
