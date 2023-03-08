@@ -14,6 +14,7 @@
 #include "iommu_internal.h"
 #include "debug.h"
 #include "ptdev.h"
+#include "iommu_spgt.h"
 #include "bug.h"
 
 #define for_each_valid_iommu(p)						\
@@ -400,19 +401,30 @@ out:
 /* used in legacy mode only */
 static void sync_shadow_pgt(struct pkvm_ptdev *ptdev, struct shadow_pgt_sync_data *sdata)
 {
+	struct pkvm_pgtable *spgt;
 	int ret;
 
-	PKVM_ASSERT(is_pgt_ops_ept(&ptdev->vpgt) && is_pgt_ops_ept(ptdev->spgt));
+	PKVM_ASSERT(is_pgt_ops_ept(&ptdev->vpgt));
+
+	/*
+	 * ptdev->pgt should be already set to this shadow iommu pgt,
+	 * but we get the same shadow iommu pgt on our own, to avoid race
+	 * if ptdev->pgt changes in the meantime due to ptdev attach to a VM.
+	 */
+	spgt = pkvm_get_host_iommu_spgt(ptdev->vpgt.root_pa, ptdev->iommu_coherency);
+	PKVM_ASSERT(spgt);
 
 	if (sdata)
-		ret = pkvm_pgtable_sync_map_range(&ptdev->vpgt, ptdev->spgt,
+		ret = pkvm_pgtable_sync_map_range(&ptdev->vpgt, spgt,
 						  sdata->vaddr,
 						  sdata->vaddr_end - sdata->vaddr,
 						  NULL, shadow_pgt_map_leaf);
 	else
-		ret = pkvm_pgtable_sync_map(&ptdev->vpgt, ptdev->spgt,
+		ret = pkvm_pgtable_sync_map(&ptdev->vpgt, spgt,
 					    NULL, shadow_pgt_map_leaf);
 	PKVM_ASSERT(ret == 0);
+
+	pkvm_put_host_iommu_spgt(spgt, ptdev->iommu_coherency);
 }
 
 /* present root entry when shadow_pa valid, otherwise un-present it */

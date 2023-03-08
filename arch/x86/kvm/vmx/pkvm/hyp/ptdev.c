@@ -16,6 +16,11 @@ static DECLARE_BITMAP(ptdevs_bitmap, MAX_PTDEV_NUM);
 static struct pkvm_ptdev pkvm_ptdev[MAX_PTDEV_NUM];
 static pkvm_spinlock_t ptdev_lock = { __ARCH_PKVM_SPINLOCK_UNLOCKED };
 
+static inline bool is_host_spgt(struct pkvm_ptdev *ptdev)
+{
+	return (ptdev->pgt != pkvm_hyp->host_vm.ept) && !ptdev_attached_to_vm(ptdev);
+}
+
 struct pkvm_ptdev *pkvm_alloc_ptdev(u16 bdf, u32 pasid, bool coherency)
 {
 	struct pkvm_ptdev *ptdev = NULL;
@@ -73,8 +78,8 @@ void pkvm_put_ptdev(struct pkvm_ptdev *ptdev)
 
 	__clear_bit(ptdev->index, ptdevs_bitmap);
 
-	if (ptdev->spgt)
-		pkvm_put_host_iommu_spgt(ptdev->spgt, ptdev->iommu_coherency);
+	if (is_host_spgt(ptdev))
+		pkvm_put_host_iommu_spgt(ptdev->pgt, ptdev->iommu_coherency);
 
 	memset(ptdev, 0, sizeof(struct pkvm_ptdev));
 
@@ -87,9 +92,9 @@ void pkvm_setup_ptdev_vpgt(struct pkvm_ptdev *ptdev, unsigned long root_gpa,
 {
 	pkvm_spin_lock(&ptdev->lock);
 
-	if (ptdev->spgt && (!shadowed || root_gpa != ptdev->vpgt.root_pa)) {
-		pkvm_put_host_iommu_spgt(ptdev->spgt, ptdev->iommu_coherency);
-		ptdev->spgt = NULL;
+	if (is_host_spgt(ptdev) && (!shadowed || root_gpa != ptdev->vpgt.root_pa)) {
+		pkvm_put_host_iommu_spgt(ptdev->pgt, ptdev->iommu_coherency);
+		ptdev->pgt = pkvm_hyp->host_vm.ept;
 	}
 
 	if (!root_gpa || root_gpa == INVALID_ADDR || !mm_ops || !paging_ops || !cap) {
@@ -100,12 +105,10 @@ void pkvm_setup_ptdev_vpgt(struct pkvm_ptdev *ptdev, unsigned long root_gpa,
 	ptdev->vpgt.root_pa = root_gpa;
 	PKVM_ASSERT(pkvm_pgtable_init(&ptdev->vpgt, mm_ops, paging_ops, cap, false) == 0);
 
-	if (shadowed && !ptdev->spgt) {
-		ptdev->spgt = pkvm_get_host_iommu_spgt(root_gpa, ptdev->iommu_coherency);
-		PKVM_ASSERT(ptdev->spgt);
+	if (shadowed && ptdev->pgt == pkvm_hyp->host_vm.ept) {
+		ptdev->pgt = pkvm_get_host_iommu_spgt(root_gpa, ptdev->iommu_coherency);
+		PKVM_ASSERT(ptdev->pgt);
 	}
-	if (!ptdev_attached_to_vm(ptdev))
-		ptdev->pgt = shadowed ? ptdev->spgt : pkvm_hyp->host_vm.ept;
 out:
 	pkvm_spin_unlock(&ptdev->lock);
 }
@@ -127,7 +130,7 @@ void pkvm_detach_ptdev(struct pkvm_ptdev *ptdev, struct pkvm_shadow_vm *vm)
 	/* Reset what the attach API has set */
 	pkvm_spin_lock(&ptdev->lock);
 	ptdev->shadow_vm_handle = 0;
-	ptdev->pgt = ptdev->spgt ? ptdev->spgt : pkvm_hyp->host_vm.ept;
+	ptdev->pgt = pkvm_hyp->host_vm.ept;
 	pkvm_spin_unlock(&ptdev->lock);
 
 	pkvm_shadow_vm_unlink_ptdev(vm, &ptdev->vm_node,
@@ -175,6 +178,11 @@ int pkvm_attach_ptdev(u16 bdf, u32 pasid, struct pkvm_shadow_vm *vm)
 		pkvm_put_ptdev(ptdev);
 		return -ENODEV;
 	}
+
+	PKVM_ASSERT(ptdev->pgt != &vm->pgstate_pgt);
+
+	if (ptdev->pgt != pkvm_hyp->host_vm.ept)
+		pkvm_put_host_iommu_spgt(ptdev->pgt, ptdev->iommu_coherency);
 
 	/*
 	 * Reset pgt of this ptdev to VM's pgstate_pgt so need to update
