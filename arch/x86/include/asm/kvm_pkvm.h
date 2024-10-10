@@ -347,6 +347,9 @@ extern struct fpu_state_config pkvm_sym(fpu_user_cfg);
 DECLARE_STATIC_KEY_FALSE(pkvm_sym(__fpu_state_size_dynamic));
 #endif
 extern unsigned int pkvm_sym(tsc_khz);
+extern bool pkvm_sym(pvmfw_present);
+extern phys_addr_t pkvm_sym(pvmfw_base);
+extern phys_addr_t pkvm_sym(pvmfw_size);
 
 u64 pkvm_total_reserve_pages(void);
 PKVM_DECLARE(void *, pkvm_early_alloc_page, (struct pkvm_memcache *mc));
@@ -559,6 +562,12 @@ static inline size_t pkvm_guest_initial_fpstate_size(struct kvm *kvm)
 
 #undef KVM_BUG
 #define KVM_BUG(cond, kvm, fmt...)		KVM_BUG_ON(cond, kvm)
+
+#else /* __PKVM_HYP__ */
+
+extern bool pvmfw_present;
+extern phys_addr_t pvmfw_base;
+extern phys_addr_t pvmfw_size;
 
 #endif /* __PKVM_HYP__ */
 
