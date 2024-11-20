@@ -498,6 +498,8 @@ static inline size_t pkvm_guest_initial_fpstate_size(struct kvm *kvm)
 	return PAGE_ALIGN(size);
 }
 
+int pkvm_vm_ioctl_enable_cap(struct kvm *kvm, struct kvm_enable_cap *cap);
+
 #ifdef __PKVM_HYP__
 
 #undef kvm_err
@@ -575,6 +577,8 @@ extern phys_addr_t pvmfw_size;
 
 static inline bool pkvm_is_protected_vm(struct kvm *kvm) { return false; }
 static inline bool pkvm_is_protected_vcpu(struct kvm_vcpu *vcpu) { return false; }
+static inline int pkvm_vm_ioctl_enable_cap(struct kvm *kvm, struct kvm_enable_cap *cap)
+{ return -EINVAL; }
 
 #endif /* CONFIG_PKVM_X86 */
 

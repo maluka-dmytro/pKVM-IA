@@ -927,6 +927,8 @@ struct kvm_pkvm_vm {
 	int handle;
 	struct pkvm_memcache guest_mmu_teardown_mc;
 	struct rb_root_cached mappings;
+
+	gpa_t pvmfw_load_addr;
 };
 
 struct kvm_pkvm_vcpu {
