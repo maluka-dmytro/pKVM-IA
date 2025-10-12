@@ -22,6 +22,7 @@ PKVM_HC_INOUT(vm_destroy)
 PKVM_HC(vcpu_create)
 PKVM_HC_INOUT(vcpu_free)
 PKVM_HC(vcpu_load)
+PKVM_HC(vcpu_put)
 
 #undef PKVM_HC
 #undef PKVM_HC_INOUT
