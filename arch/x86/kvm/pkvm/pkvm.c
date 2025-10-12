@@ -52,6 +52,9 @@ static struct pkvm_vm_ref {
  */
 size_t kvm_vcpu_sz = sizeof(struct kvm_vcpu);
 
+/* The current loaded guest vcpu */
+static DEFINE_PER_CPU(struct kvm_vcpu*, cur_guest_vcpu);
+
 static int __pkvm_vcpu_free(struct pkvm_vm *pkvm_vm, int vcpu_handle,
 			    struct pkvm_memcache *mc);
 
@@ -497,6 +500,62 @@ static int pkvm_vcpu_free(int vm_handle, int vcpu_handle, struct pkvm_memcache *
 	return ret;
 }
 
+static struct kvm_vcpu *load_kvm_vcpu(struct kvm_vcpu *vcpu)
+{
+	if (!vcpu || vcpu->cpu != raw_smp_processor_id())
+		return NULL;
+
+	kvm_x86_call(vcpu_load)(vcpu, raw_smp_processor_id());
+
+	return vcpu;
+}
+
+static void switch_to_host_vcpu(void)
+{
+	BUG_ON(!load_kvm_vcpu(this_cpu_read(host_vcpu)));
+}
+
+static int pkvm_vcpu_load(int vm_handle, int vcpu_handle)
+{
+	struct pkvm_vcpu *pkvm_vcpu = pkvm_get_vcpu(vm_handle, vcpu_handle);
+	int cpu = raw_smp_processor_id();
+	struct kvm_vcpu *vcpu;
+	int loaded_cpu;
+	int ret = 0;
+
+	if (!pkvm_vcpu)
+		return -EINVAL;
+
+	vcpu = &pkvm_vcpu->vcpu;
+	loaded_cpu = cmpxchg(&vcpu->cpu, -1, cpu);
+	if (loaded_cpu == -1) {
+		/*
+		 * Get the pkvm_vcpu to prevent it from being freed via the
+		 * vcpu_free PV interface while it is still loaded. If the
+		 * obtained pkvm_vcpu is not the same as the original one, it
+		 * must be a pkvm bug.
+		 */
+		BUG_ON(pkvm_vcpu != pkvm_get_vcpu(vm_handle, vcpu_handle));
+
+		kvm_x86_call(vcpu_load)(vcpu, cpu);
+
+		this_cpu_write(cur_guest_vcpu, vcpu);
+
+		/* Switch to host vCPU as a guest vCPU was just loaded. */
+		switch_to_host_vcpu();
+	} else if (loaded_cpu == cpu) {
+		/* The guest vCPU was already loaded on this CPU. */
+		this_cpu_write(cur_guest_vcpu, vcpu);
+	} else {
+		/* The guest vCPU was already loaded on another CPU. */
+		ret = -EBUSY;
+	}
+
+	pkvm_put_vcpu(pkvm_vcpu);
+
+	return ret;
+}
+
 int pkvm_handle_host_hypercall(unsigned long nr, union pkvm_hc_data *in,
 			       union pkvm_hc_data *out)
 {
@@ -533,6 +592,9 @@ int pkvm_handle_host_hypercall(unsigned long nr, union pkvm_hc_data *in,
 		break;
 	case __pkvm__vcpu_free:
 		ret = pkvm_vcpu_free(in->vm_handle, in->vcpu_handle, &out->memcache);
+		break;
+	case __pkvm__vcpu_load:
+		ret = pkvm_vcpu_load((int)in->val1, (int)in->val2);
 		break;
 	default:
 		ret = -EINVAL;
