@@ -608,9 +608,28 @@ static int pkvm_vcpu_put(int vm_handle, int vcpu_handle)
 	return ret;
 }
 
+static void pkvm_update_exception_bitmap(struct pkvm_vcpu *pkvm_vcpu)
+{
+	struct kvm_vcpu *vcpu;
+
+	vcpu = &pkvm_vcpu->vcpu;
+
+	/*
+	 * The guest_debug will impact what exceptions should be intercepted
+	 * for the debugging purpose. Debugging npVMs from the host side is
+	 * allowed thus updating its guest_debug flags accordingly, but not
+	 * allowed for pVM.
+	 */
+	if (!pkvm_is_protected_vcpu(vcpu))
+		vcpu->guest_debug = pkvm_vcpu->shared_vcpu->guest_debug;
+
+	kvm_x86_call(update_exception_bitmap)(vcpu);
+}
+
 static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data *in,
 					   union pkvm_hc_data *out)
 {
+	struct pkvm_vcpu *pkvm_vcpu;
 	struct kvm_vcpu *vcpu;
 	int ret = 0;
 
@@ -618,7 +637,11 @@ static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data 
 	if (!vcpu)
 		return -EINVAL;
 
+	pkvm_vcpu = to_pkvm_vcpu(vcpu);
 	switch (nr) {
+	case __pkvm__update_exception_bitmap:
+		pkvm_update_exception_bitmap(pkvm_vcpu);
+		break;
 	default:
 		ret = -EINVAL;
 		break;
