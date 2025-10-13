@@ -291,6 +291,26 @@ static void pkvm_update_exception_bitmap(struct kvm_vcpu *vcpu)
 		pkvm_hypercall(update_exception_bitmap);
 }
 
+static int pkvm_get_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
+{
+	if (pkvm_has_emulated_msr(vcpu->kvm, msr_info->index))
+		return kvm_get_msr_common(vcpu, msr_info);
+
+	if (!vcpu->arch.guest_state_protected) {
+		union pkvm_hc_data inout = {
+			.msr = *msr_info,
+		};
+		int ret;
+
+		ret = pkvm_hypercall_inout(get_msr, &inout);
+		msr_info->data = inout.msr.data;
+
+		return ret;
+	}
+
+	return -EPERM;
+}
+
 static int pkvm_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 {
 	if (pkvm_has_emulated_msr(vcpu->kvm, msr_info->index))
@@ -336,6 +356,7 @@ struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.vcpu_put = pkvm_vcpu_put,
 
 	.update_exception_bitmap = pkvm_update_exception_bitmap,
+	.get_msr = pkvm_get_msr,
 	.set_msr = pkvm_set_msr,
 	.set_efer = pkvm_set_efer,
 };
