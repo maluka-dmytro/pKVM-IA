@@ -137,6 +137,7 @@ union pkvm_hc_data {
 		int seg;
 	};
 	struct desc_ptr desc;
+	u32 intr_shadow;
 	struct {
 		u64 val1;
 		u64 val2;
