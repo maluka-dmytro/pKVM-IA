@@ -624,6 +624,7 @@ static bool is_kvm_vcpu_accessible(struct kvm_vcpu *vcpu, unsigned long fn)
 	case __pkvm__update_exception_bitmap:
 	case __pkvm__set_efer:
 	case __pkvm__set_msr:
+	case __pkvm__get_msr:
 		/*
 		 * As the host needs to pre-configure the pVM's vCPU state for
 		 * booting, the protection for pVM is only enforced by the pKVM
@@ -665,6 +666,11 @@ static int pkvm_set_msr(struct pkvm_vcpu *pkvm_vcpu, u32 index, u64 data)
 	return kvm_msr_write(&pkvm_vcpu->vcpu, index, data);
 }
 
+static int pkvm_get_msr(struct pkvm_vcpu *pkvm_vcpu, struct msr_data *msr)
+{
+	return kvm_msr_read(&pkvm_vcpu->vcpu, msr->index, &msr->data);
+}
+
 static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data *in,
 					   union pkvm_hc_data *out)
 {
@@ -691,6 +697,10 @@ static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data 
 		break;
 	case __pkvm__set_msr:
 		ret = pkvm_set_msr(pkvm_vcpu, (u32)in->val1, (u64)in->val2);
+		break;
+	case __pkvm__get_msr:
+		ret = pkvm_get_msr(pkvm_vcpu, &in->msr);
+		out->msr.data = in->msr.data;
 		break;
 	default:
 		ret = -EINVAL;
