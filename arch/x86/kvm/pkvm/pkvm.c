@@ -949,6 +949,11 @@ static void pkvm_cancel_injection(struct pkvm_vcpu *pkvm_vcpu)
 	}
 }
 
+static void pkvm_update_cr8_intercept(struct pkvm_vcpu *pkvm_vcpu, int tpr, int irr)
+{
+	kvm_x86_call(update_cr8_intercept)(&pkvm_vcpu->vcpu, tpr, irr);
+}
+
 static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data *in,
 					   union pkvm_hc_data *out)
 {
@@ -1072,6 +1077,9 @@ static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data 
 		break;
 	case __pkvm__cancel_injection:
 		pkvm_cancel_injection(pkvm_vcpu);
+		break;
+	case __pkvm__update_cr8_intercept:
+		pkvm_update_cr8_intercept(pkvm_vcpu, (int)in->val1, (int)in->val2);
 		break;
 	default:
 		ret = -EINVAL;
