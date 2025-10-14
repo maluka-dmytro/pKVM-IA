@@ -35,6 +35,9 @@ PKVM_HC(set_cr0)
 PKVM_HC_INOUT(get_rflags)
 PKVM_HC(set_rflags)
 PKVM_HC(set_dr7)
+PKVM_HC_INOUT(set_segment)
+PKVM_HC_INOUT(get_segment)
+PKVM_HC_INOUT(get_segment_base)
 
 #undef PKVM_HC
 #undef PKVM_HC_INOUT

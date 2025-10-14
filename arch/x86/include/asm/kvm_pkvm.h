@@ -133,6 +133,10 @@ union pkvm_hc_data {
 	u64 pdptrs[4];
 	unsigned long rflags;
 	struct {
+		struct kvm_segment seg_val;
+		int seg;
+	};
+	struct {
 		u64 val1;
 		u64 val2;
 		u64 val3;

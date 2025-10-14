@@ -633,6 +633,9 @@ static bool is_kvm_vcpu_accessible(struct kvm_vcpu *vcpu, unsigned long fn)
 	case __pkvm__get_rflags:
 	case __pkvm__set_dr7:
 	case __pkvm__vcpu_reset:
+	case __pkvm__set_segment:
+	case __pkvm__get_segment:
+	case __pkvm__get_segment_base:
 		/*
 		 * As the host needs to pre-configure the pVM's vCPU state for
 		 * booting, the protection for pVM is only enforced by the pKVM
@@ -760,6 +763,21 @@ static void pkvm_reset_vcpu(struct pkvm_vcpu *pkvm_vcpu, bool init_event)
 	kvm_vcpu_reset(&pkvm_vcpu->vcpu, init_event);
 }
 
+static void pkvm_set_segment(struct pkvm_vcpu *pkvm_vcpu, struct kvm_segment *var, int seg)
+{
+	kvm_x86_call(set_segment)(&pkvm_vcpu->vcpu, var, seg);
+}
+
+static void pkvm_get_segment(struct pkvm_vcpu *pkvm_vcpu, struct kvm_segment *var, int seg)
+{
+	kvm_x86_call(get_segment)(&pkvm_vcpu->vcpu, var, seg);
+}
+
+static u64 pkvm_get_segment_base(struct pkvm_vcpu *pkvm_vcpu, int seg)
+{
+	return kvm_x86_call(get_segment_base)(&pkvm_vcpu->vcpu, seg);
+}
+
 static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data *in,
 					   union pkvm_hc_data *out)
 {
@@ -814,6 +832,15 @@ static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data 
 		break;
 	case __pkvm__vcpu_reset:
 		pkvm_reset_vcpu(pkvm_vcpu, (bool)in->val1);
+		break;
+	case __pkvm__set_segment:
+		pkvm_set_segment(pkvm_vcpu, &in->seg_val, in->seg);
+		break;
+	case __pkvm__get_segment:
+		pkvm_get_segment(pkvm_vcpu, &out->seg_val, in->seg);
+		break;
+	case __pkvm__get_segment_base:
+		out->seg_val.base = pkvm_get_segment_base(pkvm_vcpu, in->seg);
 		break;
 	default:
 		ret = -EINVAL;
