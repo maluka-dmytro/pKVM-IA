@@ -891,6 +891,37 @@ static void pkvm_set_nmi_mask(struct pkvm_vcpu *pkvm_vcpu, bool masked)
 	kvm_x86_call(set_nmi_mask)(&pkvm_vcpu->vcpu, masked);
 }
 
+static void pkvm_inject_irq(struct pkvm_vcpu *pkvm_vcpu)
+{
+	struct kvm_vcpu *vcpu = &pkvm_vcpu->vcpu;
+
+	if (WARN_ON_ONCE(__pkvm_interrupt_allowed(pkvm_vcpu, true) <= 0))
+		return;
+
+	vcpu->arch.interrupt.soft = pkvm_vcpu->shared_vcpu->arch.interrupt.soft;
+	vcpu->arch.interrupt.nr = pkvm_vcpu->shared_vcpu->arch.interrupt.nr;
+	kvm_x86_call(inject_irq)(vcpu, false);
+}
+
+static void pkvm_inject_nmi(struct pkvm_vcpu *pkvm_vcpu)
+{
+	if (WARN_ON_ONCE(__pkvm_nmi_allowed(pkvm_vcpu, true) <= 0))
+		return;
+
+	kvm_x86_call(inject_nmi)(&pkvm_vcpu->vcpu);
+}
+
+static void pkvm_inject_exception(struct pkvm_vcpu *pkvm_vcpu)
+{
+	struct kvm_vcpu *vcpu = &pkvm_vcpu->vcpu;
+
+	if (WARN_ON_ONCE(pkvm_is_protected_vcpu(vcpu)))
+		return;
+
+	vcpu->arch.exception = pkvm_vcpu->shared_vcpu->arch.exception;
+	kvm_x86_call(inject_exception)(vcpu);
+}
+
 static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data *in,
 					   union pkvm_hc_data *out)
 {
@@ -1002,6 +1033,15 @@ static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data 
 		break;
 	case __pkvm__set_nmi_mask:
 		pkvm_set_nmi_mask(pkvm_vcpu, (bool)in->val1);
+		break;
+	case __pkvm__inject_irq:
+		pkvm_inject_irq(pkvm_vcpu);
+		break;
+	case __pkvm__inject_nmi:
+		pkvm_inject_nmi(pkvm_vcpu);
+		break;
+	case __pkvm__inject_exception:
+		pkvm_inject_exception(pkvm_vcpu);
 		break;
 	default:
 		ret = -EINVAL;
