@@ -954,6 +954,19 @@ static void pkvm_update_cr8_intercept(struct pkvm_vcpu *pkvm_vcpu, int tpr, int 
 	kvm_x86_call(update_cr8_intercept)(&pkvm_vcpu->vcpu, tpr, irr);
 }
 
+static void pkvm_set_virtual_apic_mode(struct pkvm_vcpu *pkvm_vcpu, u64 apic_base)
+{
+	struct kvm_vcpu *vcpu;
+
+	vcpu = &pkvm_vcpu->vcpu;
+
+	if ((vcpu->arch.apic_base ^ apic_base) & MSR_IA32_APICBASE_ENABLE)
+		vcpu->arch.cpuid_dynamic_bits_dirty = true;
+
+	vcpu->arch.apic_base = apic_base;
+	kvm_x86_call(set_virtual_apic_mode)(vcpu);
+}
+
 static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data *in,
 					   union pkvm_hc_data *out)
 {
@@ -1080,6 +1093,9 @@ static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data 
 		break;
 	case __pkvm__update_cr8_intercept:
 		pkvm_update_cr8_intercept(pkvm_vcpu, (int)in->val1, (int)in->val2);
+		break;
+	case __pkvm__set_virtual_apic_mode:
+		pkvm_set_virtual_apic_mode(pkvm_vcpu, (u64)in->val1);
 		break;
 	default:
 		ret = -EINVAL;
