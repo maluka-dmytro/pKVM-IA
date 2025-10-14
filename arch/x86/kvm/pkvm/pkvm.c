@@ -992,6 +992,11 @@ static void pkvm_load_eoi_exitmap(struct pkvm_vcpu *pkvm_vcpu, u64 eoi_exit_bitm
 	kvm_x86_call(load_eoi_exitmap)(&pkvm_vcpu->vcpu, eoi_exit_bitmap);
 }
 
+static void pkvm_hwapic_isr_update(struct pkvm_vcpu *pkvm_vcpu, int max_isr)
+{
+	kvm_x86_call(hwapic_isr_update)(&pkvm_vcpu->vcpu, max_isr);
+}
+
 static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data *in,
 					   union pkvm_hc_data *out)
 {
@@ -1127,6 +1132,9 @@ static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data 
 		break;
 	case __pkvm__load_eoi_exitmap:
 		pkvm_load_eoi_exitmap(pkvm_vcpu, in->val1, in->val2, in->val3, in->val4);
+		break;
+	case __pkvm__hwapic_isr_update:
+		pkvm_hwapic_isr_update(pkvm_vcpu, (int)in->val1);
 		break;
 	default:
 		ret = -EINVAL;
