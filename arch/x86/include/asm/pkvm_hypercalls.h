@@ -68,6 +68,7 @@ PKVM_HC_INOUT(vcpu_after_set_cpuid)
 PKVM_HC_INOUT(vcpu_add_fpstate)
 PKVM_HC(write_tsc_offset)
 PKVM_HC(write_tsc_multiplier)
+PKVM_HC(load_mmu_pgd)
 
 #undef PKVM_HC
 #undef PKVM_HC_INOUT
