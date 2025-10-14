@@ -646,6 +646,7 @@ static bool is_kvm_vcpu_accessible(struct kvm_vcpu *vcpu, unsigned long fn)
 	case __pkvm__flush_tlb_guest:
 	case __pkvm__set_interrupt_shadow:
 	case __pkvm__get_interrupt_shadow:
+	case __pkvm__set_nmi_mask:
 		/*
 		 * As the host needs to pre-configure the pVM's vCPU state for
 		 * booting, the protection for pVM is only enforced by the pKVM
@@ -846,6 +847,50 @@ static void pkvm_enable_irq_window(struct pkvm_vcpu *pkvm_vcpu)
 	kvm_x86_call(enable_irq_window)(&pkvm_vcpu->vcpu);
 }
 
+static int __pkvm_interrupt_allowed(struct pkvm_vcpu *pkvm_vcpu, bool for_injection)
+{
+	struct kvm_vcpu *vcpu = &pkvm_vcpu->vcpu;
+
+	if (!for_injection ||
+	    (!kvm_event_needs_reinjection(vcpu) &&
+	     !vcpu->arch.exception.pending))
+		return kvm_x86_call(interrupt_allowed)(vcpu, for_injection);
+
+	return -EBUSY;
+}
+
+static int pkvm_interrupt_allowed(struct pkvm_vcpu *pkvm_vcpu, bool for_injection)
+{
+	return __pkvm_interrupt_allowed(pkvm_vcpu, for_injection);
+}
+
+static int __pkvm_nmi_allowed(struct pkvm_vcpu *pkvm_vcpu, bool for_injection)
+{
+	struct kvm_vcpu *vcpu = &pkvm_vcpu->vcpu;
+
+	if (!for_injection ||
+	    (!kvm_event_needs_reinjection(vcpu) &&
+	     !vcpu->arch.exception.pending))
+		return kvm_x86_call(nmi_allowed)(vcpu, for_injection);
+
+	return -EBUSY;
+}
+
+static int pkvm_nmi_allowed(struct pkvm_vcpu *pkvm_vcpu, bool for_injection)
+{
+	return __pkvm_nmi_allowed(pkvm_vcpu, for_injection);
+}
+
+static bool pkvm_get_nmi_mask(struct pkvm_vcpu *pkvm_vcpu)
+{
+	return kvm_x86_call(get_nmi_mask)(&pkvm_vcpu->vcpu);
+}
+
+static void pkvm_set_nmi_mask(struct pkvm_vcpu *pkvm_vcpu, bool masked)
+{
+	kvm_x86_call(set_nmi_mask)(&pkvm_vcpu->vcpu, masked);
+}
+
 static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data *in,
 					   union pkvm_hc_data *out)
 {
@@ -945,6 +990,18 @@ static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data 
 		break;
 	case __pkvm__enable_irq_window:
 		pkvm_enable_irq_window(pkvm_vcpu);
+		break;
+	case __pkvm__interrupt_allowed:
+		ret = pkvm_interrupt_allowed(pkvm_vcpu, (bool)in->val1);
+		break;
+	case __pkvm__nmi_allowed:
+		ret = pkvm_nmi_allowed(pkvm_vcpu, (bool)in->val1);
+		break;
+	case __pkvm__get_nmi_mask:
+		out->nmi_mask = pkvm_get_nmi_mask(pkvm_vcpu);
+		break;
+	case __pkvm__set_nmi_mask:
+		pkvm_set_nmi_mask(pkvm_vcpu, (bool)in->val1);
 		break;
 	default:
 		ret = -EINVAL;
