@@ -625,6 +625,7 @@ static bool is_kvm_vcpu_accessible(struct kvm_vcpu *vcpu, unsigned long fn)
 	case __pkvm__set_efer:
 	case __pkvm__set_msr:
 	case __pkvm__get_msr:
+	case __pkvm__cache_reg:
 		/*
 		 * As the host needs to pre-configure the pVM's vCPU state for
 		 * booting, the protection for pVM is only enforced by the pKVM
@@ -671,6 +672,45 @@ static int pkvm_get_msr(struct pkvm_vcpu *pkvm_vcpu, struct msr_data *msr)
 	return kvm_msr_read(&pkvm_vcpu->vcpu, msr->index, &msr->data);
 }
 
+static int pkvm_cache_reg(struct pkvm_vcpu *pkvm_vcpu, enum kvm_reg reg,
+			  union pkvm_hc_data *out)
+{
+	struct kvm_vcpu *vcpu = &pkvm_vcpu->vcpu;
+
+	kvm_x86_call(cache_reg)(vcpu, reg);
+
+	switch (reg) {
+	case VCPU_REGS_RSP:
+		out->rsp = vcpu->arch.regs[VCPU_REGS_RSP];
+		break;
+	case VCPU_REGS_RIP:
+		out->rip = vcpu->arch.regs[VCPU_REGS_RIP];
+		break;
+	case VCPU_EXREG_PDPTR: {
+		struct kvm_mmu *mmu = vcpu->arch.walk_mmu;
+
+		out->pdptrs[0] = mmu->pdptrs[0];
+		out->pdptrs[1] = mmu->pdptrs[1];
+		out->pdptrs[2] = mmu->pdptrs[2];
+		out->pdptrs[3] = mmu->pdptrs[3];
+		break;
+	}
+	case VCPU_EXREG_CR0:
+		out->cr0 = vcpu->arch.cr0;
+		break;
+	case VCPU_EXREG_CR3:
+		out->cr3 = vcpu->arch.cr3;
+		break;
+	case VCPU_EXREG_CR4:
+		out->cr4 = vcpu->arch.cr4;
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	return 0;
+}
+
 static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data *in,
 					   union pkvm_hc_data *out)
 {
@@ -701,6 +741,9 @@ static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data 
 	case __pkvm__get_msr:
 		ret = pkvm_get_msr(pkvm_vcpu, &in->msr);
 		out->msr.data = in->msr.data;
+		break;
+	case __pkvm__cache_reg:
+		ret = pkvm_cache_reg(pkvm_vcpu, (enum kvm_reg)in->val1, out);
 		break;
 	default:
 		ret = -EINVAL;
