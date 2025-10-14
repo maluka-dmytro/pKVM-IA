@@ -124,6 +124,13 @@ union pkvm_hc_data {
 		int vcpu_handle;
 	};
 	struct msr_data msr;
+	enum kvm_reg reg;
+	unsigned long rsp;
+	unsigned long rip;
+	unsigned long cr0;
+	unsigned long cr3;
+	unsigned long cr4;
+	u64 pdptrs[4];
 	struct {
 		u64 val1;
 		u64 val2;
