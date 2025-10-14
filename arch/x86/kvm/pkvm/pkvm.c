@@ -978,6 +978,20 @@ static void pkvm_refresh_apicv_exec_ctrl(struct pkvm_vcpu *pkvm_vcpu, bool apicv
 	kvm_x86_call(refresh_apicv_exec_ctrl)(vcpu);
 }
 
+static void pkvm_load_eoi_exitmap(struct pkvm_vcpu *pkvm_vcpu, u64 eoi_exit_bitmap0,
+				  u64 eoi_exit_bitmap1, u64 eoi_exit_bitmap2,
+				  u64 eoi_exit_bitmap3)
+{
+	u64 eoi_exit_bitmap[] = {
+		eoi_exit_bitmap0,
+		eoi_exit_bitmap1,
+		eoi_exit_bitmap2,
+		eoi_exit_bitmap3,
+	};
+
+	kvm_x86_call(load_eoi_exitmap)(&pkvm_vcpu->vcpu, eoi_exit_bitmap);
+}
+
 static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data *in,
 					   union pkvm_hc_data *out)
 {
@@ -1110,6 +1124,9 @@ static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data 
 		break;
 	case __pkvm__refresh_apicv_exec_ctrl:
 		pkvm_refresh_apicv_exec_ctrl(pkvm_vcpu, (bool)in->val1);
+		break;
+	case __pkvm__load_eoi_exitmap:
+		pkvm_load_eoi_exitmap(pkvm_vcpu, in->val1, in->val2, in->val3, in->val4);
 		break;
 	default:
 		ret = -EINVAL;
