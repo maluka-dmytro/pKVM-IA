@@ -836,6 +836,16 @@ static u32 pkvm_get_interrupt_shadow(struct pkvm_vcpu *pkvm_vcpu)
 	return kvm_x86_call(get_interrupt_shadow)(&pkvm_vcpu->vcpu);
 }
 
+static void pkvm_enable_nmi_window(struct pkvm_vcpu *pkvm_vcpu)
+{
+	kvm_x86_call(enable_nmi_window)(&pkvm_vcpu->vcpu);
+}
+
+static void pkvm_enable_irq_window(struct pkvm_vcpu *pkvm_vcpu)
+{
+	kvm_x86_call(enable_irq_window)(&pkvm_vcpu->vcpu);
+}
+
 static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data *in,
 					   union pkvm_hc_data *out)
 {
@@ -929,6 +939,12 @@ static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data 
 		break;
 	case __pkvm__get_interrupt_shadow:
 		out->intr_shadow = pkvm_get_interrupt_shadow(pkvm_vcpu);
+		break;
+	case __pkvm__enable_nmi_window:
+		pkvm_enable_nmi_window(pkvm_vcpu);
+		break;
+	case __pkvm__enable_irq_window:
+		pkvm_enable_irq_window(pkvm_vcpu);
 		break;
 	default:
 		ret = -EINVAL;
