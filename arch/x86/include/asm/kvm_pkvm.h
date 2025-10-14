@@ -123,6 +123,7 @@ union pkvm_hc_data {
 		int vm_handle;
 		int vcpu_handle;
 	};
+	struct msr_data msr;
 	struct {
 		u64 val1;
 		u64 val2;
