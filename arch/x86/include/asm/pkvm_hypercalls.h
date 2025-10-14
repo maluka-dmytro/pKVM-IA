@@ -42,6 +42,10 @@ PKVM_HC_INOUT(set_idt)
 PKVM_HC_INOUT(get_idt)
 PKVM_HC_INOUT(set_gdt)
 PKVM_HC_INOUT(get_gdt)
+PKVM_HC(flush_tlb_all)
+PKVM_HC(flush_tlb_current)
+PKVM_HC(flush_tlb_gva)
+PKVM_HC(flush_tlb_guest)
 
 #undef PKVM_HC
 #undef PKVM_HC_INOUT

@@ -640,6 +640,10 @@ static bool is_kvm_vcpu_accessible(struct kvm_vcpu *vcpu, unsigned long fn)
 	case __pkvm__get_idt:
 	case __pkvm__set_gdt:
 	case __pkvm__get_gdt:
+	case __pkvm__flush_tlb_all:
+	case __pkvm__flush_tlb_current:
+	case __pkvm__flush_tlb_gva:
+	case __pkvm__flush_tlb_guest:
 		/*
 		 * As the host needs to pre-configure the pVM's vCPU state for
 		 * booting, the protection for pVM is only enforced by the pKVM
@@ -800,6 +804,26 @@ static void pkvm_access_gdt(struct pkvm_vcpu *pkvm_vcpu,
 		kvm_x86_call(get_gdt)(&pkvm_vcpu->vcpu, desc);
 }
 
+static void pkvm_flush_tlb_all(struct pkvm_vcpu *pkvm_vcpu)
+{
+	kvm_x86_call(flush_tlb_all)(&pkvm_vcpu->vcpu);
+}
+
+static void pkvm_flush_tlb_current(struct pkvm_vcpu *pkvm_vcpu)
+{
+	kvm_x86_call(flush_tlb_current)(&pkvm_vcpu->vcpu);
+}
+
+static void pkvm_flush_tlb_gva(struct pkvm_vcpu *pkvm_vcpu, gva_t addr)
+{
+	kvm_x86_call(flush_tlb_gva)(&pkvm_vcpu->vcpu, addr);
+}
+
+static void pkvm_flush_tlb_guest(struct pkvm_vcpu *pkvm_vcpu)
+{
+	kvm_x86_call(flush_tlb_guest)(&pkvm_vcpu->vcpu);
+}
+
 static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data *in,
 					   union pkvm_hc_data *out)
 {
@@ -875,6 +899,18 @@ static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data 
 		break;
 	case __pkvm__get_gdt:
 		pkvm_access_gdt(pkvm_vcpu, &out->desc, false);
+		break;
+	case __pkvm__flush_tlb_all:
+		pkvm_flush_tlb_all(pkvm_vcpu);
+		break;
+	case __pkvm__flush_tlb_current:
+		pkvm_flush_tlb_current(pkvm_vcpu);
+		break;
+	case __pkvm__flush_tlb_gva:
+		pkvm_flush_tlb_gva(pkvm_vcpu, (gva_t)in->val1);
+		break;
+	case __pkvm__flush_tlb_guest:
+		pkvm_flush_tlb_guest(pkvm_vcpu);
 		break;
 	default:
 		ret = -EINVAL;
