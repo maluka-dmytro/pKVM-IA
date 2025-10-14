@@ -631,6 +631,7 @@ static bool is_kvm_vcpu_accessible(struct kvm_vcpu *vcpu, unsigned long fn)
 	case __pkvm__set_cr0:
 	case __pkvm__set_rflags:
 	case __pkvm__get_rflags:
+	case __pkvm__set_dr7:
 		/*
 		 * As the host needs to pre-configure the pVM's vCPU state for
 		 * booting, the protection for pVM is only enforced by the pKVM
@@ -741,6 +742,18 @@ static unsigned long pkvm_get_rflags(struct pkvm_vcpu *pkvm_vcpu)
 	return kvm_x86_call(get_rflags)(&pkvm_vcpu->vcpu);
 }
 
+static void pkvm_set_dr7(struct pkvm_vcpu *pkvm_vcpu, unsigned long val)
+{
+	unsigned long dr7 = val;
+	struct kvm_vcpu *vcpu;
+
+	vcpu = &pkvm_vcpu->vcpu;
+	kvm_x86_call(set_dr7)(vcpu, dr7);
+	vcpu->arch.switch_db_regs &= ~KVM_DEBUGREG_BP_ENABLED;
+	if (dr7 & DR7_BP_EN_MASK)
+		vcpu->arch.switch_db_regs |= KVM_DEBUGREG_BP_ENABLED;
+}
+
 static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data *in,
 					   union pkvm_hc_data *out)
 {
@@ -789,6 +802,9 @@ static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data 
 		break;
 	case __pkvm__get_rflags:
 		out->rflags = pkvm_get_rflags(pkvm_vcpu);
+		break;
+	case __pkvm__set_dr7:
+		pkvm_set_dr7(pkvm_vcpu, in->val1);
 		break;
 	default:
 		ret = -EINVAL;
