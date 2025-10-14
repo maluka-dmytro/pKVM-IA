@@ -38,6 +38,10 @@ PKVM_HC(set_dr7)
 PKVM_HC_INOUT(set_segment)
 PKVM_HC_INOUT(get_segment)
 PKVM_HC_INOUT(get_segment_base)
+PKVM_HC_INOUT(set_idt)
+PKVM_HC_INOUT(get_idt)
+PKVM_HC_INOUT(set_gdt)
+PKVM_HC_INOUT(get_gdt)
 
 #undef PKVM_HC
 #undef PKVM_HC_INOUT
