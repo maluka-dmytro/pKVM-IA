@@ -627,6 +627,7 @@ static bool is_kvm_vcpu_accessible(struct kvm_vcpu *vcpu, unsigned long fn)
 	case __pkvm__get_msr:
 	case __pkvm__cache_reg:
 	case __pkvm__set_cr4:
+	case __pkvm__post_set_cr3:
 		/*
 		 * As the host needs to pre-configure the pVM's vCPU state for
 		 * booting, the protection for pVM is only enforced by the pKVM
@@ -717,6 +718,11 @@ static void pkvm_set_cr4(struct pkvm_vcpu *pkvm_vcpu, unsigned long cr4)
 	kvm_x86_call(set_cr4)(&pkvm_vcpu->vcpu, cr4);
 }
 
+static void pkvm_post_set_cr3(struct pkvm_vcpu *pkvm_vcpu, unsigned long cr3)
+{
+	kvm_x86_call(post_set_cr3)(&pkvm_vcpu->vcpu, cr3);
+}
+
 static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data *in,
 					   union pkvm_hc_data *out)
 {
@@ -753,6 +759,9 @@ static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data 
 		break;
 	case __pkvm__set_cr4:
 		pkvm_set_cr4(pkvm_vcpu, (unsigned long)in->val1);
+		break;
+	case __pkvm__post_set_cr3:
+		pkvm_post_set_cr3(pkvm_vcpu, in->val1);
 		break;
 	default:
 		ret = -EINVAL;
