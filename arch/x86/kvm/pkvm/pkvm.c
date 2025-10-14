@@ -644,6 +644,8 @@ static bool is_kvm_vcpu_accessible(struct kvm_vcpu *vcpu, unsigned long fn)
 	case __pkvm__flush_tlb_current:
 	case __pkvm__flush_tlb_gva:
 	case __pkvm__flush_tlb_guest:
+	case __pkvm__set_interrupt_shadow:
+	case __pkvm__get_interrupt_shadow:
 		/*
 		 * As the host needs to pre-configure the pVM's vCPU state for
 		 * booting, the protection for pVM is only enforced by the pKVM
@@ -824,6 +826,16 @@ static void pkvm_flush_tlb_guest(struct pkvm_vcpu *pkvm_vcpu)
 	kvm_x86_call(flush_tlb_guest)(&pkvm_vcpu->vcpu);
 }
 
+static void pkvm_set_interrupt_shadow(struct pkvm_vcpu *pkvm_vcpu, int mask)
+{
+	kvm_x86_call(set_interrupt_shadow)(&pkvm_vcpu->vcpu, mask);
+}
+
+static u32 pkvm_get_interrupt_shadow(struct pkvm_vcpu *pkvm_vcpu)
+{
+	return kvm_x86_call(get_interrupt_shadow)(&pkvm_vcpu->vcpu);
+}
+
 static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data *in,
 					   union pkvm_hc_data *out)
 {
@@ -911,6 +923,12 @@ static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data 
 		break;
 	case __pkvm__flush_tlb_guest:
 		pkvm_flush_tlb_guest(pkvm_vcpu);
+		break;
+	case __pkvm__set_interrupt_shadow:
+		pkvm_set_interrupt_shadow(pkvm_vcpu, (int)in->val1);
+		break;
+	case __pkvm__get_interrupt_shadow:
+		out->intr_shadow = pkvm_get_interrupt_shadow(pkvm_vcpu);
 		break;
 	default:
 		ret = -EINVAL;
