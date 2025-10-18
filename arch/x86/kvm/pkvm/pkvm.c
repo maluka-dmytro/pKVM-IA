@@ -632,6 +632,7 @@ static bool is_kvm_vcpu_accessible(struct kvm_vcpu *vcpu, unsigned long fn)
 	case __pkvm__set_rflags:
 	case __pkvm__get_rflags:
 	case __pkvm__set_dr7:
+	case __pkvm__vcpu_reset:
 		/*
 		 * As the host needs to pre-configure the pVM's vCPU state for
 		 * booting, the protection for pVM is only enforced by the pKVM
@@ -754,6 +755,11 @@ static void pkvm_set_dr7(struct pkvm_vcpu *pkvm_vcpu, unsigned long val)
 		vcpu->arch.switch_db_regs |= KVM_DEBUGREG_BP_ENABLED;
 }
 
+static void pkvm_reset_vcpu(struct pkvm_vcpu *pkvm_vcpu, bool init_event)
+{
+	kvm_vcpu_reset(&pkvm_vcpu->vcpu, init_event);
+}
+
 static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data *in,
 					   union pkvm_hc_data *out)
 {
@@ -805,6 +811,9 @@ static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data 
 		break;
 	case __pkvm__set_dr7:
 		pkvm_set_dr7(pkvm_vcpu, in->val1);
+		break;
+	case __pkvm__vcpu_reset:
+		pkvm_reset_vcpu(pkvm_vcpu, (bool)in->val1);
 		break;
 	default:
 		ret = -EINVAL;
