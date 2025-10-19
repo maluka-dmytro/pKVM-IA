@@ -131,6 +131,7 @@ union pkvm_hc_data {
 	unsigned long cr3;
 	unsigned long cr4;
 	u64 pdptrs[4];
+	unsigned long rflags;
 	struct {
 		u64 val1;
 		u64 val2;
