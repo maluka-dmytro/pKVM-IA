@@ -28,6 +28,7 @@ PKVM_HC(set_efer)
 PKVM_HC(set_msr)
 PKVM_HC_INOUT(get_msr)
 PKVM_HC_INOUT(cache_reg)
+PKVM_HC(set_cr4)
 
 #undef PKVM_HC
 #undef PKVM_HC_INOUT
