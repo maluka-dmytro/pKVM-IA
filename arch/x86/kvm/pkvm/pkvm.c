@@ -629,6 +629,8 @@ static bool is_kvm_vcpu_accessible(struct kvm_vcpu *vcpu, unsigned long fn)
 	case __pkvm__set_cr4:
 	case __pkvm__post_set_cr3:
 	case __pkvm__set_cr0:
+	case __pkvm__set_rflags:
+	case __pkvm__get_rflags:
 		/*
 		 * As the host needs to pre-configure the pVM's vCPU state for
 		 * booting, the protection for pVM is only enforced by the pKVM
@@ -729,6 +731,16 @@ static void pkvm_set_cr0(struct pkvm_vcpu *pkvm_vcpu, unsigned long cr0)
 	kvm_x86_call(set_cr0)(&pkvm_vcpu->vcpu, cr0);
 }
 
+static void pkvm_set_rflags(struct pkvm_vcpu *pkvm_vcpu, unsigned long val)
+{
+	kvm_x86_call(set_rflags)(&pkvm_vcpu->vcpu, val);
+}
+
+static unsigned long pkvm_get_rflags(struct pkvm_vcpu *pkvm_vcpu)
+{
+	return kvm_x86_call(get_rflags)(&pkvm_vcpu->vcpu);
+}
+
 static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data *in,
 					   union pkvm_hc_data *out)
 {
@@ -771,6 +783,12 @@ static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data 
 		break;
 	case __pkvm__set_cr0:
 		pkvm_set_cr0(pkvm_vcpu, (unsigned long)in->val1);
+		break;
+	case __pkvm__set_rflags:
+		pkvm_set_rflags(pkvm_vcpu, in->val1);
+		break;
+	case __pkvm__get_rflags:
+		out->rflags = pkvm_get_rflags(pkvm_vcpu);
 		break;
 	default:
 		ret = -EINVAL;
