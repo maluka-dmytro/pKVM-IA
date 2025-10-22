@@ -107,6 +107,30 @@ enum pkvm_hc {
 	MAX_PKVM_HYPERCALLS,
 };
 
+#define PKVM_FN_ARG_NUM		4
+
+union pkvm_hc_data {
+	struct {
+		u64 val1;
+		u64 val2;
+		u64 val3;
+		u64 val4;
+	};
+};
+
+static inline bool pkvm_hc_use_inout(enum pkvm_hc hc)
+{
+	switch (hc) {
+	#define PKVM_HC(f) case TO_PKVM_HC(f): return false;
+	#define PKVM_HC_INOUT(f) case TO_PKVM_HC(f): return true;
+	#include <asm/pkvm_hypercalls.h>
+	default:
+		break;
+	}
+
+	return false;
+}
+
 #define __pkvm_hypercall_0(f)		kvm_hypercall4(f, 0, 0, 0, 0)
 #define __pkvm_hypercall_1(f, p1)							\
 	({										\
@@ -128,8 +152,32 @@ enum pkvm_hc {
 	})
 #define pkvm_hypercall(f, ...)								\
 	({										\
+		enum pkvm_hc hc = TO_PKVM_HC(f);					\
+		BUILD_BUG_ON(!__builtin_constant_p(hc) ||				\
+			     pkvm_hc_use_inout(TO_PKVM_HC(f)));				\
 		CONCATENATE(__pkvm_hypercall_,						\
-			    COUNT_ARGS(__VA_ARGS__))(TO_PKVM_HC(f), ##__VA_ARGS__);	\
+			    COUNT_ARGS(__VA_ARGS__))(hc, ##__VA_ARGS__);		\
+	})
+#define __pkvm_hypercall_inout_4(f, p1, p2, p3, p4, o)					\
+	({										\
+		int ret;								\
+		asm volatile(KVM_HYPERCALL						\
+			: "=a"(ret), "=b"((o)->val1), "=c"((o)->val2),			\
+			  "=d"((o)->val3), "=S"((o)->val4)				\
+			: "a"(f), "b"(p1), "c"(p2), "d"(p3), "S"(p4)			\
+			: "memory");							\
+		ret;									\
+	})
+#define pkvm_hypercall_inout(f, inout)							\
+	({										\
+		u64 p1 = (inout)->val1;							\
+		u64 p2 = (inout)->val2;							\
+		u64 p3 = (inout)->val3;							\
+		u64 p4 = (inout)->val4;							\
+		BUILD_BUG_ON(sizeof(union pkvm_hc_data) !=				\
+			     sizeof(u64) * PKVM_FN_ARG_NUM);				\
+		CONCATENATE(__pkvm_hypercall_inout_,					\
+			    PKVM_FN_ARG_NUM)(TO_PKVM_HC(f), p1, p2, p3, p4, (inout));	\
 	})
 
 extern unsigned long pkvm_sym(page_offset_base);
