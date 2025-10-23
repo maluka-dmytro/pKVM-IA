@@ -65,6 +65,7 @@ PKVM_HC(load_eoi_exitmap)
 PKVM_HC(hwapic_isr_update)
 PKVM_HC(sync_pir_to_irr)
 PKVM_HC_INOUT(vcpu_after_set_cpuid)
+PKVM_HC_INOUT(vcpu_add_fpstate)
 
 #undef PKVM_HC
 #undef PKVM_HC_INOUT
