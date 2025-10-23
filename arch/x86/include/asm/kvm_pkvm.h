@@ -141,6 +141,10 @@ union pkvm_hc_data {
 	bool nmi_mask;
 	gpa_t cpuid_gpa;
 	struct {
+		gpa_t fpstate_gpa;
+		size_t fpstate_size;
+	};
+	struct {
 		u64 val1;
 		u64 val2;
 		u64 val3;
