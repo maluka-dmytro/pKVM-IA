@@ -144,6 +144,8 @@ union pkvm_hc_data {
 		gpa_t fpstate_gpa;
 		size_t fpstate_size;
 	};
+	bool force_immediate_exit;
+	unsigned long reqs_to_host;
 	struct {
 		u64 val1;
 		u64 val2;
