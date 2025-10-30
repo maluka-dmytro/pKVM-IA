@@ -155,6 +155,7 @@ union pkvm_hc_data {
 };
 
 #define HOST_HANDLE_EXIT			0
+#define HOST_HANDLE_GUESTDBG_SINGLESTEP		1
 
 static inline bool pkvm_hc_use_inout(enum pkvm_hc hc)
 {
