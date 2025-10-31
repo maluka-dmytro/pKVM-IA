@@ -55,6 +55,15 @@ size_t kvm_vcpu_sz = sizeof(struct kvm_vcpu);
 /* The current loaded guest vcpu */
 static DEFINE_PER_CPU(struct kvm_vcpu*, cur_guest_vcpu);
 
+static struct pkvm_x86_ops pkvm_x86_ops __read_mostly;
+
+/* TODO: If can be optimized with the static call mechanism. */
+#define pkvm_x86_call(func)				\
+({							\
+	BUG_ON(!pkvm_x86_ops.func);			\
+	(pkvm_x86_ops.func);				\
+})
+
 static int __pkvm_vcpu_free(struct pkvm_vm *pkvm_vm, int vcpu_handle,
 			    struct pkvm_memcache *mc);
 
@@ -1231,6 +1240,8 @@ static void update_vcpu_state_from_host(struct pkvm_vcpu *pkvm_vcpu)
 		 */
 		kvm_rip_write(vcpu, shared_vcpu->arch.regs[VCPU_REGS_RIP]);
 	}
+
+	pkvm_x86_call(update_vcpu_state_from_host)(pkvm_vcpu);
 }
 
 static void share_vcpu_state_with_host(struct pkvm_vcpu *pkvm_vcpu)
@@ -1280,6 +1291,8 @@ static void share_vcpu_state_with_host(struct pkvm_vcpu *pkvm_vcpu)
 		shared_vcpu->arch.dr6 = vcpu->arch.dr6;
 		shared_vcpu->arch.dr7 = vcpu->arch.dr7;
 	}
+
+	pkvm_x86_call(share_vcpu_state_with_host)(pkvm_vcpu);
 }
 
 static int pkvm_vcpu_run(struct pkvm_vcpu *pkvm_vcpu, bool force_immediate_exit,
@@ -1644,4 +1657,9 @@ unsigned long pkvm_pcpu_tss(int cpu)
 
 	return (unsigned long)&pcpu->tss;
 #endif
+}
+
+void pkvm_x86_ops_init(struct pkvm_x86_ops *ops)
+{
+	memcpy(&pkvm_x86_ops, ops, sizeof(struct pkvm_x86_ops));
 }

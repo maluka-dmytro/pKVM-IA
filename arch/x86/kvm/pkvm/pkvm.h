@@ -100,6 +100,11 @@ static inline void pkvm_make_req_to_host(int req, struct kvm_vcpu *vcpu)
 	set_bit(req, &to_pkvm_vcpu(vcpu)->reqs_to_host);
 }
 
+struct pkvm_x86_ops {
+	void (*update_vcpu_state_from_host)(struct pkvm_vcpu *pkvm_vcpu);
+	void (*share_vcpu_state_with_host)(struct pkvm_vcpu *pkvm_vcpu);
+};
+
 int pkvm_handle_host_hypercall(unsigned long nr, union pkvm_hc_data *in,
 			       union pkvm_hc_data *out);
 void pkvm_kick_vcpu(struct kvm_vcpu *vcpu);
@@ -110,5 +115,6 @@ struct pkvm_vcpu *pkvm_get_vcpu(int vm_handle, int vcpu_handle);
 void pkvm_put_vcpu(struct pkvm_vcpu *pkvm_vcpu);
 unsigned long pkvm_pcpu_tss(int cpu);
 int pkvm_vcpu_enter_guest(struct pkvm_vcpu *pkvm_vcpu, bool force_immediate_exit);
+void pkvm_x86_ops_init(struct pkvm_x86_ops *ops);
 
 #endif /* __PKVM_X86_PKVM_H */
