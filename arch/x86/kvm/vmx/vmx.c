@@ -4983,7 +4983,17 @@ static u32 vmx_secondary_exec_control(struct vcpu_vmx *vmx)
 	vmx_adjust_sec_exec_control(vmx, &exec_control, waitpkg, WAITPKG,
 				    ENABLE_USR_WAIT_PAUSE, false);
 
+#ifndef __PKVM_HYP__
 	if (!vcpu->kvm->arch.bus_lock_detection_enabled)
+#else
+	/*
+	 * Allow the host to control the bus_lock_detection_enabled to determine
+	 * bus lock vmexit if there is has_bus_lock_exit capability. So respect
+	 * the setting from the host side in this case.
+	 */
+	if (!kvm_caps.has_bus_lock_exit ||
+	    !to_pkvm(vcpu->kvm)->shared_kvm->arch.bus_lock_detection_enabled)
+#endif
 		exec_control &= ~SECONDARY_EXEC_BUS_LOCK_DETECTION;
 
 	if (!kvm_notify_vmexit_enabled(vcpu->kvm))
@@ -6659,7 +6669,6 @@ static int handle_encls(struct kvm_vcpu *vcpu)
 }
 #endif /* CONFIG_X86_SGX_KVM */
 
-#ifndef __PKVM_HYP__
 static int handle_bus_lock_vmexit(struct kvm_vcpu *vcpu)
 {
 	/*
@@ -6671,6 +6680,7 @@ static int handle_bus_lock_vmexit(struct kvm_vcpu *vcpu)
 	return 1;
 }
 
+#ifndef __PKVM_HYP__
 static int handle_notify(struct kvm_vcpu *vcpu)
 {
 	unsigned long exit_qual = vmx_get_exit_qual(vcpu);
@@ -6804,8 +6814,8 @@ static int (*kvm_vmx_exit_handlers[])(struct kvm_vcpu *vcpu) = {
 	[EXIT_REASON_PREEMPTION_TIMER]	      = handle_preemption_timer,
 #endif
 	[EXIT_REASON_ENCLS]		      = handle_encls,
-#ifndef __PKVM_HYP__
 	[EXIT_REASON_BUS_LOCK]                = handle_bus_lock_vmexit,
+#ifndef __PKVM_HYP__
 	[EXIT_REASON_NOTIFY]		      = handle_notify,
 	[EXIT_REASON_SEAMCALL]		      = handle_tdx_instruction,
 	[EXIT_REASON_TDCALL]		      = handle_tdx_instruction,
