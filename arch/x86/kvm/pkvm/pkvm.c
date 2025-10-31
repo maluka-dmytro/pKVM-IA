@@ -884,7 +884,8 @@ static int __pkvm_interrupt_allowed(struct pkvm_vcpu *pkvm_vcpu, bool for_inject
 
 	if (!for_injection ||
 	    (!kvm_event_needs_reinjection(vcpu) &&
-	     !vcpu->arch.exception.pending))
+	     !vcpu->arch.exception.pending &&
+	     !pkvm_vcpu->host_emulated_msr_err))
 		return kvm_x86_call(interrupt_allowed)(vcpu, for_injection);
 
 	return -EBUSY;
@@ -901,7 +902,8 @@ static int __pkvm_nmi_allowed(struct pkvm_vcpu *pkvm_vcpu, bool for_injection)
 
 	if (!for_injection ||
 	    (!kvm_event_needs_reinjection(vcpu) &&
-	     !vcpu->arch.exception.pending))
+	     !vcpu->arch.exception.pending &&
+	     !pkvm_vcpu->host_emulated_msr_err))
 		return kvm_x86_call(nmi_allowed)(vcpu, for_injection);
 
 	return -EBUSY;
@@ -1311,6 +1313,29 @@ static int pkvm_vcpu_run(struct pkvm_vcpu *pkvm_vcpu, bool force_immediate_exit,
 	return ret;
 }
 
+static int pkvm_complete_emulated_msr(struct pkvm_vcpu *pkvm_vcpu, int err)
+{
+	/*
+	 * For the npVM, the host itself can complete the emulated MSR by either
+	 * injecting the exception or skipping the instruction, according to the
+	 * emulation result.
+	 */
+	if (!pkvm_is_protected_vcpu(&pkvm_vcpu->vcpu))
+		return -EOPNOTSUPP;
+
+	/*
+	 * For the pVM, just save the error code rather than completing the MSR
+	 * emulation via kvm_x86_call(complete_emulated_msr), to prevent the
+	 * host from injecting exception or skipping instructions as the host
+	 * can use this PV interface at any scenario, e.g, not for MSR emulation
+	 * at all. The pKVM hypervisor will decide how to complete the MSR
+	 * emulation according to the last exit reason and this saved error code
+	 * before entering the guest again.
+	 */
+	pkvm_vcpu->host_emulated_msr_err = err;
+	return 1;
+}
+
 static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data *in,
 					   union pkvm_hc_data *out)
 {
@@ -1475,6 +1500,9 @@ static int pkvm_vcpu_handle_host_hypercall(unsigned long nr, union pkvm_hc_data 
 		break;
 	case __pkvm__vcpu_run:
 		ret = pkvm_vcpu_run(pkvm_vcpu, in->force_immediate_exit, &out->reqs_to_host);
+		break;
+	case __pkvm__complete_emulated_msr:
+		ret = pkvm_complete_emulated_msr(pkvm_vcpu, (int)in->val1);
 		break;
 	default:
 		ret = -EINVAL;
