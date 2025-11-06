@@ -16,6 +16,8 @@ struct pkvm_vcpu {
 	struct kvm_vcpu *shared_vcpu;
 	/* Point to the pkvm_vm this pkvm_vcpu belongs to */
 	struct pkvm_vm *pkvm_vm;
+	/* Requests for the host VMM to handle */
+	unsigned long reqs_to_host;
 	/*
 	 * The donated structure size, possibly including a vendor specific
 	 * structure wrapping the kvm_vcpu structure (see below).
@@ -91,6 +93,13 @@ static inline struct pkvm_vcpu *to_pkvm_vcpu(struct kvm_vcpu *vcpu)
 	return container_of(vcpu, struct pkvm_vcpu, vcpu);
 }
 
+static inline void pkvm_make_req_to_host(int req, struct kvm_vcpu *vcpu)
+{
+	BUILD_BUG_ON(req >= sizeof(to_pkvm_vcpu(vcpu)->reqs_to_host) * 8);
+
+	set_bit(req, &to_pkvm_vcpu(vcpu)->reqs_to_host);
+}
+
 int pkvm_handle_host_hypercall(unsigned long nr, union pkvm_hc_data *in,
 			       union pkvm_hc_data *out);
 void pkvm_kick_vcpu(struct kvm_vcpu *vcpu);
@@ -100,5 +109,6 @@ void pkvm_put_vm(struct pkvm_vm *pkvm_vm);
 struct pkvm_vcpu *pkvm_get_vcpu(int vm_handle, int vcpu_handle);
 void pkvm_put_vcpu(struct pkvm_vcpu *pkvm_vcpu);
 unsigned long pkvm_pcpu_tss(int cpu);
+int pkvm_vcpu_enter_guest(struct pkvm_vcpu *pkvm_vcpu, bool force_immediate_exit);
 
 #endif /* __PKVM_X86_PKVM_H */
