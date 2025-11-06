@@ -1092,6 +1092,10 @@ struct kvm_vcpu_arch {
 #if IS_ENABLED(CONFIG_HYPERV)
 	hpa_t hv_root_tdp;
 #endif
+
+#ifdef CONFIG_PKVM_X86
+	int pkvm_vcpu_handle;
+#endif
 };
 
 struct kvm_lpage_info {
