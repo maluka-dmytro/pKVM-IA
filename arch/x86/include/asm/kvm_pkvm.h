@@ -110,6 +110,8 @@ enum pkvm_hc {
 #define PKVM_FN_ARG_NUM		4
 
 union pkvm_hc_data {
+	struct pkvm_memcache memcache;
+	int vm_handle;
 	struct {
 		u64 val1;
 		u64 val2;
