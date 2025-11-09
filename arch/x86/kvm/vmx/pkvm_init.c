@@ -347,9 +347,13 @@ static bool mitigate_spectre_v2(struct cpuinfo_x86 *c)
 	if (!boot_cpu_has(X86_FEATURE_IBRS_ENHANCED))
 		return false;
 
-	/* Require eIBRS not effected by PBRSB */
-	if (boot_cpu_has_bug(X86_BUG_EIBRS_PBRSB))
-		return false;
+	if (boot_cpu_has_bug(X86_BUG_EIBRS_PBRSB)) {
+		/* Fill RSB after vmexit */
+		set_cpu_cap(&pkvm_sym(boot_cpu_data), X86_FEATURE_RSB_VMEXIT_LITE);
+
+		clear_bit(X86_BUG_EIBRS_PBRSB, (unsigned long *)c->x86_capability);
+		pr_info("mitigated eibrs_pbrsb when mitigating spectre_v2\n");
+	}
 
 	if (boot_cpu_has_bug(X86_BUG_BHI)) {
 		/* Require to set BHI_DIS_S to mitigate BHI bug */
@@ -411,6 +415,28 @@ static bool mitigate_bhi(void)
 	return true;
 }
 
+static bool mitigate_eibrs_pbrsb(void)
+{
+	/* Fill RSB after vmexit */
+	set_cpu_cap(&pkvm_sym(boot_cpu_data), X86_FEATURE_RSB_VMEXIT_LITE);
+
+	return true;
+}
+
+static bool mitigate_rfds(void)
+{
+	if (!(x86_read_arch_cap_msr() & ARCH_CAP_RFDS_CLEAR))
+		return false;
+
+	set_cpu_cap(&pkvm_sym(boot_cpu_data), X86_FEATURE_CLEAR_CPU_BUF);
+	return true;
+}
+
+static bool mitigate_vmscape(void)
+{
+	return mitigate_spectre_v2_user();
+}
+
 /*
  * Make sure the CPU only with the bugs that can be mitigated by the pKVM
  * hypervisor can pass the check. And these mitigated CPU bugs are listed in
@@ -431,7 +457,7 @@ static bool mitigate_bhi(void)
  * 2.1) Leverage hardware mitigation eIBRS feature; Set SPEC_CTRL_IBRS in
  * spec ctrl MSR.
  * 2.2) No context switch in pKVM hypervisor. No need to fill RSB.
- * 2.3) Requires eIBRS is not affected by PBRSB.
+ * 2.3) If eIBRS is affected by PBRSB, fill RSB for vmexits.
  * 2.4) Set SPEC_CTRL_BHI_DIS_S in spec ctrl MSR to mitigate BHI bug.
  *
  * 3) X86_BUG_SPECTRE_V2_USER.
@@ -447,6 +473,21 @@ static bool mitigate_bhi(void)
  *
  * 6) X86_BUG_BHI:
  * Set SPEC_CTRL_BHI_DIS_S in spec ctrl MSR to mitigate BHI bug.
+ *
+ * 7) X86_BUG_EIBRS_PBRSB.
+ * Fill RSB after vmexit.
+ *
+ * 8) X86_BUG_RFDS.
+ * Requires ARCH_CAP_RFDS_CLEAR to clears CPU register file via VERW.
+ *
+ * 9) X86_BUG_VMSCAPE
+ * Requires eIBRS (thus no need for STIBP) in case SMT is enabled at runtime.
+ * No need to perform IBPB before exit to the user space as the pKVM hypervisor
+ * doesn't have. But the pKVM hypervisor can switch to the host VMM which runs
+ * at the user space privilege level, and the host is untrusted to guarantee
+ * this bug will be mitigated. Thus perform IBPB before switching to the host
+ * to mitigate this bug. So the mitigation is the same with
+ * X86_BUG_SPECTRE_V2_USER.
  *
  * Note: Beyond the above mitigations, the pKVM hypervisor also supports boot
  * time retpoline/rethunk patching to mitigate certain older CPU bugs (not
@@ -493,6 +534,15 @@ static void pkvm_mitigate_cpu_bug(struct cpuinfo_x86 *c, unsigned long bug)
 	case X86_BUG_BHI:
 		mitigated = mitigate_bhi();
 		break;
+	case X86_BUG_EIBRS_PBRSB:
+		mitigated = mitigate_eibrs_pbrsb();
+		break;
+	case X86_BUG_RFDS:
+		mitigated = mitigate_rfds();
+		break;
+	case X86_BUG_VMSCAPE:
+		mitigated = mitigate_vmscape();
+		break;
 	default:
 		break;
 	}
@@ -506,8 +556,8 @@ static void pkvm_mitigate_cpu_bug(struct cpuinfo_x86 *c, unsigned long bug)
 }
 
 /*
- * The CPU bugs list based on Intel PTL CPU. Could be extended beyond PTL in the
- * future.
+ * The CPU bugs list based on Intel ADL/PTL CPU. Could be extended beyond those
+ * CPUs in the future.
  */
 static unsigned long possible_cpu_bugs[] = {
 	X86_BUG_SPECTRE_V1,
@@ -516,6 +566,9 @@ static unsigned long possible_cpu_bugs[] = {
 	X86_BUG_SPEC_STORE_BYPASS,
 	X86_BUG_SWAPGS,
 	X86_BUG_BHI,
+	X86_BUG_EIBRS_PBRSB,
+	X86_BUG_RFDS,
+	X86_BUG_VMSCAPE,
 };
 
 static bool pkvm_has_unmitigated_cpu_bugs(void)
