@@ -18,6 +18,7 @@ PKVM_HC(dump_vmexit_trace)
 PKVM_HC(check_processor_compatibility)
 PKVM_HC(enable_virtualization_cpu)
 PKVM_HC(vm_init)
+PKVM_HC_INOUT(vm_destroy)
 
 #undef PKVM_HC
 #undef PKVM_HC_INOUT
