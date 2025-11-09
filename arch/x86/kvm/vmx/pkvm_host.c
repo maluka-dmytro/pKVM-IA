@@ -29,6 +29,40 @@ static void host_free_pkvm_memcache(struct pkvm_memcache *mc)
 	free_pkvm_memcache(mc, host_free_pkvm_page_range, kvm_host_va);
 }
 
+static void pkvm_free_loaded_vmcs(struct loaded_vmcs *loaded_vmcs)
+{
+	if (!loaded_vmcs->vmcs)
+		return;
+	free_vmcs(loaded_vmcs->vmcs);
+	loaded_vmcs->vmcs = NULL;
+	if (loaded_vmcs->msr_bitmap)
+		free_page((unsigned long)loaded_vmcs->msr_bitmap);
+	WARN_ON(loaded_vmcs->shadow_vmcs != NULL);
+}
+
+static int pkvm_alloc_loaded_vmcs(struct loaded_vmcs *loaded_vmcs)
+{
+	loaded_vmcs->vmcs = alloc_vmcs(false);
+	if (!loaded_vmcs->vmcs)
+		return -ENOMEM;
+
+	loaded_vmcs->shadow_vmcs = NULL;
+	loaded_vmcs->cpu = -1;
+
+	if (cpu_has_vmx_msr_bitmap()) {
+		loaded_vmcs->msr_bitmap = (unsigned long *)
+				__get_free_page(GFP_KERNEL_ACCOUNT);
+		if (!loaded_vmcs->msr_bitmap)
+			goto out_vmcs;
+	}
+
+	return 0;
+
+out_vmcs:
+	pkvm_free_loaded_vmcs(loaded_vmcs);
+	return -ENOMEM;
+}
+
 static int pkvm_check_processor_compat(void)
 {
 	return pkvm_hypercall(check_processor_compatibility);
@@ -101,6 +135,56 @@ static void pkvm_vm_destroy(struct kvm *kvm)
 	vmx_vm_destroy(kvm);
 }
 
+static int pkvm_vcpu_create(struct kvm_vcpu *vcpu)
+{
+	size_t vcpu_size, fps_size;
+	void *pkvm_vcpu, *fps;
+	struct vcpu_vmx *vmx;
+	int ret;
+
+	vmx = to_vmx(vcpu);
+
+	INIT_LIST_HEAD(&vmx->vt.pi_wakeup_list);
+
+	ret = pkvm_alloc_loaded_vmcs(&vmx->vmcs01);
+	if (ret < 0)
+		return ret;
+
+	vmx->loaded_vmcs = &vmx->vmcs01;
+	vmx->loaded_vmcs->cpu = -1;
+
+	vcpu_size = PAGE_ALIGN(PKVM_VMX_VCPU_SIZE);
+	if (lapic_in_kernel(vcpu))
+		vcpu_size += PAGE_ALIGN(sizeof(struct kvm_lapic));
+
+	ret = -ENOMEM;
+	pkvm_vcpu = alloc_pages_exact(vcpu_size, GFP_KERNEL_ACCOUNT);
+	if (!pkvm_vcpu)
+		goto free_vmcs;
+
+	fps_size = pkvm_guest_initial_fpstate_size(vcpu->kvm);
+	fps = alloc_pages_exact(fps_size, GFP_KERNEL_ACCOUNT);
+	if (!fps)
+		goto free_vcpu;
+
+	ret = pkvm_hypercall(vcpu_create, vcpu->kvm->arch.pkvm_vm_handle,
+			     __pa(vcpu), __pa(pkvm_vcpu), __pa(fps));
+	if (ret < 0)
+		goto free_fpu;
+
+	vcpu->arch.pkvm_vcpu_handle = ret;
+
+	return 0;
+
+free_fpu:
+	free_pages_exact(fps, fps_size);
+free_vcpu:
+	free_pages_exact(pkvm_vcpu, vcpu_size);
+free_vmcs:
+	pkvm_free_loaded_vmcs(vmx->loaded_vmcs);
+	return ret;
+}
+
 struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.name = KBUILD_MODNAME,
 
@@ -115,4 +199,5 @@ struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.vm_destroy = pkvm_vm_destroy,
 
 	.vcpu_precreate = vmx_vcpu_precreate,
+	.vcpu_create = pkvm_vcpu_create,
 };
