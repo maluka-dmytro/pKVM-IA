@@ -98,6 +98,14 @@ pop_pkvm_memcache(struct pkvm_memcache *mc, void *(*to_va)(phys_addr_t phys))
 	return head;
 }
 
+static inline void free_pkvm_memcache(struct pkvm_memcache *mc,
+				      void (*free)(struct pkvm_page_range range),
+				      void *(*to_va)(phys_addr_t phys))
+{
+	while (mc->count)
+		free(pop_pkvm_memcache(mc, to_va));
+}
+
 #define TO_PKVM_HC(f)		CONCATENATE(__pkvm__, f)
 
 enum pkvm_hc {
