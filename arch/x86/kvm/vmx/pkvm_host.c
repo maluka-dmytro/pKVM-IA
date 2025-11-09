@@ -185,6 +185,26 @@ free_vmcs:
 	return ret;
 }
 
+static void pkvm_vcpu_free(struct kvm_vcpu *vcpu)
+{
+	struct vcpu_vmx *vmx = to_vmx(vcpu);
+	union pkvm_hc_data inout = { 0 };
+	int ret;
+
+	inout.vm_handle = vcpu->kvm->arch.pkvm_vm_handle;
+	inout.vcpu_handle = vcpu->arch.pkvm_vcpu_handle;
+
+	ret = pkvm_hypercall_inout(vcpu_free, &inout);
+	if (ret) {
+		kvm_err("pkvm failed to free pkvm_vcpu: %d", ret);
+		return;
+	}
+
+	host_free_pkvm_memcache(&inout.memcache);
+
+	pkvm_free_loaded_vmcs(vmx->loaded_vmcs);
+}
+
 struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.name = KBUILD_MODNAME,
 
@@ -200,4 +220,5 @@ struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 
 	.vcpu_precreate = vmx_vcpu_precreate,
 	.vcpu_create = pkvm_vcpu_create,
+	.vcpu_free = pkvm_vcpu_free,
 };
