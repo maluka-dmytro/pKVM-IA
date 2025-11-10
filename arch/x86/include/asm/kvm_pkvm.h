@@ -139,6 +139,7 @@ union pkvm_hc_data {
 	struct desc_ptr desc;
 	u32 intr_shadow;
 	bool nmi_mask;
+	gpa_t cpuid_gpa;
 	struct {
 		u64 val1;
 		u64 val2;
