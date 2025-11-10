@@ -1618,6 +1618,10 @@ struct kvm_arch {
 	 * current VM.
 	 */
 	int cpu_dirty_log_size;
+
+#ifdef CONFIG_PKVM_X86
+	int pkvm_vm_handle;
+#endif
 };
 
 struct kvm_vm_stat {
