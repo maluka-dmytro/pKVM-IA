@@ -1906,15 +1906,17 @@ void vmx_inject_exception(struct kvm_vcpu *vcpu)
 		intr_info |= INTR_INFO_DELIVER_CODE_MASK;
 	}
 
-#ifndef __PKVM_HYP__
 	if (vmx->rmode.vm86_active) {
+#ifndef __PKVM_HYP__
 		int inc_eip = 0;
 		if (kvm_exception_is_soft(ex->vector))
 			inc_eip = vcpu->arch.event_exit_inst_len;
 		kvm_inject_realmode_interrupt(vcpu, ex->vector, inc_eip);
+#else
+		WARN_ONCE(1, "pkvm doesn't support injecting exception to a real mode guest\n");
+#endif
 		return;
 	}
-#endif
 
 	WARN_ON_ONCE(vmx->vt.emulation_required);
 
@@ -5255,7 +5257,6 @@ void vmx_enable_nmi_window(struct kvm_vcpu *vcpu)
 	exec_controls_setbit(to_vmx(vcpu), CPU_BASED_NMI_WINDOW_EXITING);
 }
 
-#ifndef __PKVM_HYP__
 void vmx_inject_irq(struct kvm_vcpu *vcpu, bool reinjected)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -5266,10 +5267,14 @@ void vmx_inject_irq(struct kvm_vcpu *vcpu, bool reinjected)
 
 	++vcpu->stat.irq_injections;
 	if (vmx->rmode.vm86_active) {
+#ifndef __PKVM_HYP__
 		int inc_eip = 0;
 		if (vcpu->arch.interrupt.soft)
 			inc_eip = vcpu->arch.event_exit_inst_len;
 		kvm_inject_realmode_interrupt(vcpu, irq, inc_eip);
+#else
+		WARN_ONCE(1, "pkvm doesn't support injecting irq to a real mode guest\n");
+#endif
 		return;
 	}
 	intr = irq | INTR_INFO_VALID_MASK;
@@ -5305,7 +5310,11 @@ void vmx_inject_nmi(struct kvm_vcpu *vcpu)
 	vmx->loaded_vmcs->nmi_known_unmasked = false;
 
 	if (vmx->rmode.vm86_active) {
+#ifndef __PKVM_HYP__
 		kvm_inject_realmode_interrupt(vcpu, NMI_VECTOR, 0);
+#else
+		WARN_ONCE(1, "pkvm doesn't support injecting NMI to a real mode guest\n");
+#endif
 		return;
 	}
 
@@ -5314,7 +5323,6 @@ void vmx_inject_nmi(struct kvm_vcpu *vcpu)
 
 	vmx_clear_hlt(vcpu);
 }
-#endif /* !__PKVM_HYP__ */
 
 bool vmx_get_nmi_mask(struct kvm_vcpu *vcpu)
 {
