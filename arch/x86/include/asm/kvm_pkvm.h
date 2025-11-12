@@ -119,7 +119,10 @@ enum pkvm_hc {
 
 union pkvm_hc_data {
 	struct pkvm_memcache memcache;
-	int vm_handle;
+	struct {
+		int vm_handle;
+		int vcpu_handle;
+	};
 	struct {
 		u64 val1;
 		u64 val2;
