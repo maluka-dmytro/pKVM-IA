@@ -27,7 +27,8 @@ struct pt_regs;
 void __warn(const char *file, int line, void *caller, unsigned taint,
 	    struct pt_regs *regs, struct warn_args *args);
 
-#ifdef CONFIG_BUG
+#if defined(CONFIG_BUG) && \
+	(!defined(__PKVM_HYP__) || defined(CONFIG_PKVM_X86_DEBUG))
 
 #ifdef CONFIG_GENERIC_BUG
 struct bug_entry {

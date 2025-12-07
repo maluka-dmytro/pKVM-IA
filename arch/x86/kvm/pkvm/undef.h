@@ -11,8 +11,6 @@
  */
 #ifndef CONFIG_PKVM_X86_DEBUG
 #undef CONFIG_PRINTK
-#undef CONFIG_BUG
-#undef CONFIG_GENERIC_BUG
 #undef CONFIG_DYNAMIC_DEBUG
 #undef CONFIG_DYNAMIC_DEBUG_CORE
 #endif
@@ -59,6 +57,10 @@
  *     tools/bpf/bpftool/bpftool btf dump file vmlinux.unstripped
  */
 /*
+#ifndef CONFIG_PKVM_X86_DEBUG
+#undef CONFIG_BUG
+#undef CONFIG_GENERIC_BUG
+#endif
 #undef CONFIG_LOCKDEP
 #undef CONFIG_TRACEPOINTS
 */
