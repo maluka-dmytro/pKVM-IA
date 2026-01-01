@@ -147,6 +147,7 @@ int pkvm_vcpu_enter_guest(struct kvm_vcpu *vcpu, bool force_immediate_exit,
 			  unsigned long *reqs_to_host);
 void pkvm_x86_ops_init(struct pkvm_x86_ops *ops);
 int pkvm_emulate_hypercall(struct kvm_vcpu *vcpu);
+bool pkvm_hypercall_need_skip_instruction(unsigned long nr);
 typedef int (*pkvm_vm_func_t)(struct pkvm_vm *vm, void *arg);
 int pkvm_walk_each_vm(pkvm_vm_func_t func, void *arg);
 

@@ -9794,6 +9794,9 @@ static void update_protected_vcpu_state(struct kvm_vcpu *vcpu,
 		to_pkvm_vcpu(vcpu)->host_emulated_msr_err = 0;
 		break;
 	case EXIT_REASON_VMCALL:
+		if (pkvm_hypercall_need_skip_instruction(kvm_rax_read(vcpu)))
+			WARN_ON_ONCE(kvm_skip_emulated_instruction(vcpu) != 1);
+
 		/*
 		 * After a hypercall being emulated by the host, the RAX may be
 		 * filled by the host with the return value to the guest. So for
@@ -9801,7 +9804,6 @@ static void update_protected_vcpu_state(struct kvm_vcpu *vcpu,
 		 * the host after returning back from a hypercall.
 		 */
 		kvm_rax_write(vcpu, shared_vcpu->arch.regs[VCPU_REGS_RAX]);
-		WARN_ON_ONCE(kvm_skip_emulated_instruction(vcpu) != 1);
 		break;
 	default:
 		break;
