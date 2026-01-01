@@ -88,6 +88,7 @@
 
 #ifdef __PKVM_HYP__
 #include "pkvm.h"
+#include "pkvm/mmu.h"
 
 #undef module_param_named
 #define module_param_named(...)
@@ -10626,9 +10627,24 @@ static int complete_hypercall_exit(struct kvm_vcpu *vcpu)
 	return kvm_skip_emulated_instruction(vcpu);
 }
 
+#ifdef CONFIG_PKVM_X86
+static int handle_memcache_refill(struct kvm_vcpu *vcpu, unsigned long refill_size)
+{
+	int ret;
+
+	ret = kvm_topup_pkvm_memcache(&vcpu->arch.pkvm.guest_mmu_memcache,
+				      refill_size);
+	if (ret)
+		return ret;
+
+	/* handled */
+	return 1;
+}
+
 static int kvm_pkvm_hypercall(struct kvm_vcpu *vcpu)
 {
 	unsigned long nr = kvm_rax_read(vcpu);
+	unsigned long refill_size;
 	int ret;
 
 	switch (nr) {
@@ -10655,6 +10671,15 @@ static int kvm_pkvm_hypercall(struct kvm_vcpu *vcpu)
 		/* Leverage sev_es MMIO write */
 		ret = kvm_sev_es_mmio_write(vcpu, kvm_rbx_read(vcpu), size, &val);
 		break;
+	case PKVM_GHC_SHARE_MEM:
+		/*
+		 * The only case when pKVM forwards this hypercall to the host
+		 * is when it asks the host to refill the memcache with the
+		 * needed amount of pages.
+		 */
+		refill_size = vcpu->arch.pkvm.req_param;
+		ret = handle_memcache_refill(vcpu, refill_size);
+		break;
 	}
 	default:
 		ret = 1;
@@ -10669,6 +10694,7 @@ invalid:
 	vcpu->run->internal.ndata = 0;
 	return 0;
 }
+#endif /* CONFIG_PKVM_X86 */
 
 int ____kvm_emulate_hypercall(struct kvm_vcpu *vcpu, int cpl,
 			      int (*complete_hypercall)(struct kvm_vcpu *))
@@ -10776,8 +10802,10 @@ EXPORT_SYMBOL_FOR_KVM_INTERNAL(____kvm_emulate_hypercall);
 
 int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 {
+#ifdef CONFIG_PKVM_X86
 	if (pkvm_is_protected_vcpu(vcpu))
 		return kvm_pkvm_hypercall(vcpu);
+#endif
 
 	if (kvm_xen_hypercall_enabled(vcpu->kvm))
 		return kvm_xen_hypercall(vcpu);
@@ -14942,6 +14970,8 @@ int pkvm_vcpu_enter_guest(struct kvm_vcpu *vcpu, bool force_immediate_exit,
 
 int pkvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 {
+	struct pkvm_vcpu *pkvm_vcpu = to_pkvm_vcpu(vcpu);
+	unsigned long memcache_refill_size;
 	u64 nr, a0, a1, a2, a3;
 	int ret = -KVM_EPERM;
 
@@ -14961,6 +14991,20 @@ int pkvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 
 	switch (nr) {
 	case PKVM_GHC_SHARE_MEM:
+		pkvm_guest_mmu_refill_memcache(pkvm_vcpu);
+
+		memcache_refill_size = __pkvm_pgtable_max_pages(a1 >> PAGE_SHIFT);
+		if (vcpu->arch.pkvm.guest_mmu_memcache.count < memcache_refill_size) {
+			/*
+			 * If not enough memory in memcache to handle mapping, request
+			 * should be forwarded to the host for handling memcache refill,
+			 * after which the instruction will be re-issued (don't skip the
+			 * instruction).
+			 */
+			pkvm_vcpu->shared_vcpu->arch.pkvm.req_param = memcache_refill_size;
+			return 0;
+		}
+
 		ret = pkvm_guest_share_host(vcpu, a0, a1);
 		break;
 	case PKVM_GHC_UNSHARE_MEM:
