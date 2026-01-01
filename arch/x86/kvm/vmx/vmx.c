@@ -9776,13 +9776,24 @@ static void update_protected_vcpu_state(struct kvm_vcpu *vcpu,
 		break;
 	case EXIT_REASON_VMCALL:
 		/*
+		 * Don't skip the instruction if the hypercall which has been handled
+		 * by the host is the memory share hypercall. This hypercall is
+		 * normally handled by pKVM itself, and only forwarded to the host
+		 * in the case when need the host's help to refill the MMU memcache
+		 * with enough pages for successful sharing. So in such case let the
+		 * guest re-issue the VMCALL instruction, to request sharing again
+		 * once pKVM has enough pages to complete it.
+		 */
+		if (kvm_rax_read(vcpu) != PKVM_GHC_SHARE_MEM)
+			WARN_ON_ONCE(kvm_skip_emulated_instruction(vcpu) != 1);
+
+		/*
 		 * After a hypercall being emulated by the host, the RAX may be
 		 * filled by the host with the return value to the guest. So for
 		 * the pVM, suppose it is aware that the RAX may be modified by
 		 * the host after returning back from a hypercall.
 		 */
 		kvm_rax_write(vcpu, shared_vcpu->arch.regs[VCPU_REGS_RAX]);
-		WARN_ON_ONCE(kvm_skip_emulated_instruction(vcpu) != 1);
 		break;
 	default:
 		break;
