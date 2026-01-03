@@ -1726,7 +1726,8 @@ static void pkvm_write_tsc_multiplier(struct kvm_vcpu *vcpu)
 
 static void pkvm_load_mmu_pgd(struct kvm_vcpu *vcpu, hpa_t root_hpa, int root_level)
 {
-	pkvm_hypercall(load_mmu_pgd, root_hpa, root_level);
+	if (!vcpu->arch.guest_state_protected)
+		pkvm_hypercall(load_mmu_pgd, root_hpa, root_level);
 }
 
 static void pkvm_leave_nested(struct kvm_vcpu *vcpu) {}
