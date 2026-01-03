@@ -668,6 +668,44 @@ static int __host_unshare_guest(unsigned long gpa, unsigned long hpa,
 	return 0;
 }
 
+static int __guest_share_host(unsigned long gpa, unsigned long hpa,
+			      unsigned long size, u64 prot, void *arg)
+{
+	struct kvm_vcpu *vcpu = arg;
+	struct pkvm_vm *pkvm_vm = to_pkvm_vcpu(vcpu)->pkvm_vm;
+	int ret;
+
+	prot = pkvm_pte_set_pgstate(prot, &pkvm_vm->mmu, PKVM_PAGE_SHARED_OWNED);
+	ret = pkvm_pgtable_map(&pkvm_vm->mmu, gpa, hpa, size, prot,
+			       &vcpu->arch.pkvm.guest_mmu_memcache);
+	if (ret)
+		return ret;
+
+	BUG_ON(pkvm_pgtable_map(&host_mmu, hpa, hpa, size,
+				host_mmu_pte_prot(false), NULL));
+	set_host_mem_pgstate(hpa, size, PKVM_PAGE_SHARED_BORROWED);
+
+	return 0;
+}
+
+static int __guest_unshare_host(unsigned long gpa, unsigned long hpa,
+				unsigned long size, u64 prot, void *arg)
+{
+	struct kvm_vcpu *vcpu = arg;
+	struct pkvm_vm *pkvm_vm = to_pkvm_vcpu(vcpu)->pkvm_vm;
+	int ret;
+
+	BUG_ON(pkvm_pgtable_set_owner(&host_mmu, hpa, size, PKVM_ID_GUEST));
+	set_host_mem_pgstate(hpa, size, PKVM_PAGE_NONE);
+
+	prot = pkvm_pte_set_pgstate(prot, &pkvm_vm->mmu, PKVM_PAGE_OWNED);
+	ret = pkvm_pgtable_map(&pkvm_vm->mmu, gpa, hpa, size, prot, NULL);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
 int pkvm_hyp_mmu_init(void *pool_base, unsigned long pool_pages)
 {
 	struct pkvm_pgtable_cap cap = {
@@ -1367,6 +1405,67 @@ int pkvm_host_test_clear_young_guest(struct kvm *kvm, unsigned long gpa,
 	pkvm_guest_mmu_lock(pkvm_vm);
 	ret = pkvm_pgtable_test_clear_young(&pkvm_vm->mmu, gpa, size, mkold);
 	pkvm_guest_mmu_unlock(pkvm_vm);
+
+	return ret;
+}
+
+/* TODO: add doc */
+int pkvm_guest_share_host(struct kvm_vcpu *vcpu, unsigned long gpa,
+			  unsigned long size)
+{
+	struct pkvm_vm *pkvm_vm = to_pkvm_vcpu(vcpu)->pkvm_vm;
+	int ret;
+
+	if (!PAGE_ALIGNED(gpa) || !PAGE_ALIGNED(size))
+		return -EINVAL;
+
+	pkvm_host_mmu_lock();
+	pkvm_guest_mmu_lock(pkvm_vm);
+
+	ret = check_guest_host_state(pkvm_vm, gpa, size, PKVM_PAGE_OWNED,
+				     PKVM_PAGE_NONE);
+	if (ret)
+		goto unlock;
+
+	ret = for_each_contig_range(&pkvm_vm->mmu, gpa, size,
+				    __guest_share_host, vcpu);
+	if (ret) {
+		/* Unshare already shared pages, if any. */
+		for_each_contig_range(&pkvm_vm->mmu, gpa, size,
+				      __guest_unshare_host, vcpu);
+	}
+unlock:
+	pkvm_guest_mmu_unlock(pkvm_vm);
+	pkvm_host_mmu_unlock();
+
+	return ret;
+}
+
+/* TODO: add doc */
+/* TODO: test is somehow */
+int pkvm_guest_unshare_host(struct kvm_vcpu *vcpu, unsigned long gpa,
+			    unsigned long size)
+{
+	struct pkvm_vm *pkvm_vm = to_pkvm_vcpu(vcpu)->pkvm_vm;
+	int ret;
+
+	if (!PAGE_ALIGNED(gpa) || !PAGE_ALIGNED(size))
+		return -EINVAL;
+
+	pkvm_host_mmu_lock();
+	pkvm_guest_mmu_lock(pkvm_vm);
+
+	ret = check_guest_host_state(pkvm_vm, gpa, size, PKVM_PAGE_SHARED_OWNED,
+				     PKVM_PAGE_SHARED_BORROWED);
+	if (ret)
+		goto unlock;
+
+	ret = for_each_contig_range(&pkvm_vm->mmu, gpa, size,
+				    __guest_unshare_host, vcpu);
+	BUG_ON(ret);
+unlock:
+	pkvm_guest_mmu_unlock(pkvm_vm);
+	pkvm_host_mmu_unlock();
 
 	return ret;
 }
