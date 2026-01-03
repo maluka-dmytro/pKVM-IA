@@ -1350,3 +1350,23 @@ unlock:
 
 	return ret;
 }
+
+/* TODO: add doc */
+int pkvm_host_test_clear_young_guest(struct kvm *kvm, unsigned long gpa,
+				     unsigned long size, bool mkold)
+{
+	struct pkvm_vm *pkvm_vm = to_pkvm(kvm);
+	int ret;
+
+	if (!PAGE_ALIGNED(gpa) || !PAGE_ALIGNED(size))
+		return -EINVAL;
+
+	if (WARN_ON_ONCE(pkvm_is_protected_vm(kvm)))
+		return -EPERM;
+
+	pkvm_guest_mmu_lock(pkvm_vm);
+	ret = pkvm_pgtable_test_clear_young(&pkvm_vm->mmu, gpa, size, mkold);
+	pkvm_guest_mmu_unlock(pkvm_vm);
+
+	return ret;
+}
