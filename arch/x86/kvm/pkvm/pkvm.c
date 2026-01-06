@@ -384,6 +384,9 @@ static int __vcpu_create(struct kvm *kvm, struct kvm_vcpu *vcpu, struct fpstate 
 		kvm->arch.notify_vmexit_flags = pkvm_vm->shared_kvm->arch.notify_vmexit_flags;
 	}
 
+	if (!pkvm_is_protected_vcpu(vcpu))
+		kvm->arch.disabled_exits = pkvm_vm->shared_kvm->arch.disabled_exits;
+
 	pkvm_spin_unlock(&pkvm_vm->lock);
 
 	vcpu->kvm = kvm;
