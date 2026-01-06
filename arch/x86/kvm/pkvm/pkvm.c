@@ -361,6 +361,7 @@ static int __vcpu_create(struct kvm *kvm, struct kvm_vcpu *vcpu, struct fpstate 
 {
 	struct pkvm_vcpu *pkvm_vcpu = to_pkvm_vcpu(vcpu);
 	int ret = kvm_x86_call(vcpu_precreate)(kvm);
+	struct pkvm_vm *pkvm_vm = to_pkvm(kvm);
 	void *unused = (void *)pkvm_vcpu +
 		       PKVM_VCPU_BASE_SIZE +
 		       kvm_vcpu_sz;
@@ -368,6 +369,13 @@ static int __vcpu_create(struct kvm *kvm, struct kvm_vcpu *vcpu, struct fpstate 
 
 	if (ret)
 		return ret;
+
+	pkvm_spin_lock(&pkvm_vm->lock);
+
+	if (!pkvm_is_protected_vcpu(vcpu))
+		kvm->arch.disabled_exits = pkvm_vm->shared_kvm->arch.disabled_exits;
+
+	pkvm_spin_unlock(&pkvm_vm->lock);
 
 	vcpu->kvm = kvm;
 	/* Set cpu to -1 to indicate it is not loaded on any CPU */
