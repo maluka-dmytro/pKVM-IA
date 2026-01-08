@@ -407,6 +407,9 @@ static int __vcpu_create(struct kvm *kvm, struct kvm_vcpu *vcpu, struct fpstate 
 	vcpu->arch.last_vmentry_cpu = -1;
 	vcpu->arch.regs_avail = ~0;
 	vcpu->arch.regs_dirty = ~0;
+	vcpu->arch.mp_state = KVM_MP_STATE_UNINITIALIZED;
+	if (pkvm_is_protected_vcpu(vcpu) && kvm_vcpu_is_reset_bsp(vcpu))
+		vcpu->arch.mp_state = KVM_MP_STATE_RUNNABLE;	/* FIXME */
 	vcpu->arch.pat = MSR_IA32_CR_PAT_DEFAULT;
 
 	if (!pkvm_is_protected_vcpu(vcpu)) {
@@ -1192,6 +1195,12 @@ static int pkvm_load_mmu_pgd(struct kvm_vcpu *vcpu)
 	return 0;
 }
 
+static void pkvm_vcpu_ap_entry_init(struct kvm_vcpu *vcpu)
+{
+	kvm_vcpu_reset(vcpu, true);
+	kvm_vcpu_deliver_sipi_vector(vcpu, vcpu->arch.apic->sipi_vector);
+}
+
 static void update_vcpu_state_from_host(struct kvm_vcpu *vcpu)
 {
 	struct kvm_vcpu *shared_vcpu = to_pkvm_vcpu(vcpu)->shared_vcpu;
@@ -1323,6 +1332,14 @@ static int pkvm_vcpu_run(struct kvm_vcpu *vcpu, bool force_immediate_exit,
 			 unsigned long *reqs_to_host)
 {
 	int ret;
+
+	if (pkvm_is_protected_vcpu(vcpu)) {
+		if (smp_load_acquire(&vcpu->arch.mp_state) != KVM_MP_STATE_RUNNABLE)
+			return -EPERM;
+
+		if (unlikely(!kvm_vcpu_has_run(vcpu) && !kvm_vcpu_is_reset_bsp(vcpu)))
+			pkvm_vcpu_ap_entry_init(vcpu);
+	}
 
 	if (unlikely(!kvm_vcpu_has_run(vcpu)))
 		pkvm_load_mmu_pgd(vcpu);
@@ -1850,6 +1867,58 @@ unsigned long pkvm_pcpu_tss(int cpu)
 
 	return (unsigned long)&pcpu->tss;
 #endif
+}
+
+int pkvm_start_secondary_vcpu(struct kvm *kvm, u32 apic_id, unsigned long start_ip)
+{
+	struct pkvm_vm *pkvm_vm = to_pkvm(kvm);
+	int ret = -EINVAL;
+	int i;
+
+	if (!pkvm_is_protected_vm(kvm))
+		return -EINVAL;
+
+	if (start_ip & ~0xff000)
+		return -EFAULT;
+
+	pkvm_spin_lock(&pkvm_vm->lock);
+
+	for (i = 0; i < kvm->created_vcpus; i++) {
+		struct kvm_vcpu *vcpu = &pkvm_vm->vcpus[i]->vcpu;
+
+		if (vcpu->vcpu_id != apic_id)
+			continue;
+
+		if (kvm_vcpu_is_reset_bsp(vcpu)) {
+			ret = -EINVAL;
+			break;
+		}
+
+		if (!lapic_in_kernel(vcpu)) {
+			ret = -EOPNOTSUPP;
+			break;
+		}
+
+		if (vcpu->arch.mp_state != KVM_MP_STATE_UNINITIALIZED) {
+			ret = -EBUSY;
+			break;
+		}
+
+		vcpu->arch.apic->sipi_vector = start_ip >> 12;
+		/*
+		 * Make sure to update sipi_vector before updating mp_state, i.e.
+		 * before allowing the vCPU to run. Pairs with smp_load_acquire()
+		 * in pkvm_vcpu_run().
+		 */
+		smp_store_release(&vcpu->arch.mp_state, KVM_MP_STATE_RUNNABLE);
+
+		ret = 0;
+		break;
+	}
+
+	pkvm_spin_unlock(&pkvm_vm->lock);
+
+	return ret;
 }
 
 void pkvm_x86_ops_init(struct pkvm_x86_ops *ops)
