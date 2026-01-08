@@ -8034,6 +8034,7 @@ static int vcpu_mmio_read(struct kvm_vcpu *vcpu, gpa_t addr, int len, void *v)
 
 	return handled;
 }
+#endif /* !__PKVM_HYP__ */
 
 void kvm_set_segment(struct kvm_vcpu *vcpu,
 		     struct kvm_segment *var, int seg)
@@ -8047,6 +8048,7 @@ void kvm_get_segment(struct kvm_vcpu *vcpu,
 	kvm_x86_call(get_segment)(vcpu, var, seg);
 }
 
+#ifndef __PKVM_HYP__
 gpa_t translate_nested_gpa(struct kvm_vcpu *vcpu, gpa_t gpa, u64 access,
 			   struct x86_exception *exception)
 {
@@ -10604,6 +10606,31 @@ static int handle_memcache_refill(struct kvm_vcpu *vcpu, unsigned long refill_si
 	return 1;
 }
 
+static int pkvm_start_secondary_vcpu(struct kvm *kvm, int apic_id)
+{
+	struct kvm_vcpu *vcpu = kvm_get_vcpu_by_id(kvm, apic_id);
+	struct kvm_lapic *apic;
+
+	if (WARN_ON(!vcpu))
+		return -EINVAL;
+
+	apic = vcpu->arch.apic;
+	if (WARN_ON(!apic))
+		return -EOPNOTSUPP;
+
+	/*
+	 * "Assert" both INIT and SIPI to let the vcpu thread start the vcpu
+	 * in the usual way. Note that it doesn't matter which value of
+	 * apic->sipi_vector the host will use, since pKVM will enforce
+	 * the needed start vector anyway.
+	 */
+	set_bit(KVM_APIC_INIT, &apic->pending_events);
+	set_bit(KVM_APIC_SIPI, &apic->pending_events);
+	kvm_vcpu_kick(vcpu);
+
+	return 0;
+}
+
 static int kvm_pkvm_hypercall(struct kvm_vcpu *vcpu)
 {
 	unsigned long nr = kvm_rax_read(vcpu);
@@ -10650,6 +10677,11 @@ static int kvm_pkvm_hypercall(struct kvm_vcpu *vcpu)
 		 */
 		refill_size = vcpu->arch.pkvm.req_param;
 		ret = handle_memcache_refill(vcpu, refill_size);
+		break;
+	case PKVM_GHC_START_CPU:
+		ret = pkvm_start_secondary_vcpu(vcpu->kvm, kvm_rbx_read(vcpu));
+		kvm_rax_write(vcpu, ret);
+		ret = 1;
 		break;
 	}
 	default:
@@ -13347,7 +13379,6 @@ void kvm_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_vcpu_reset);
 
-#ifndef __PKVM_HYP__
 void kvm_vcpu_deliver_sipi_vector(struct kvm_vcpu *vcpu, u8 vector)
 {
 	struct kvm_segment cs;
@@ -13360,6 +13391,7 @@ void kvm_vcpu_deliver_sipi_vector(struct kvm_vcpu *vcpu, u8 vector)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_vcpu_deliver_sipi_vector);
 
+#ifndef __PKVM_HYP__
 void kvm_arch_enable_virtualization(void)
 {
 	cpu_emergency_register_virt_callback(kvm_x86_ops.emergency_disable_virtualization_cpu);
@@ -14976,6 +15008,17 @@ int pkvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 		/* Hypercall for MMIO accessing should be forwared to the host */
 		kvm_skip_emulated_instruction(vcpu);
 		return 0;
+	case PKVM_GHC_START_CPU:
+		ret = pkvm_start_secondary_vcpu(vcpu->kvm, a0, a1);
+		if (!ret) {
+			/* Don't expose start address to the host. */
+			kvm_rcx_write(vcpu, 0);
+
+			/* Let the host finish handling the hypercall. */
+			kvm_skip_emulated_instruction(vcpu);
+			return 0;
+		}
+		break;
 	default:
 		/* The other hypercalls are not supported */
 		break;
