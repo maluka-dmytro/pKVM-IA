@@ -106,3 +106,11 @@ unsigned int debug_smp_processor_id(void)
 	return raw_smp_processor_id();
 }
 #endif
+
+#ifndef CONFIG_PREEMPTION
+int __cond_resched(void) {}
+#endif
+
+#ifdef CONFIG_DEBUG_ATOMIC_SLEEP
+void __might_resched(const char *file, int line, unsigned int offsets) {}
+#endif
