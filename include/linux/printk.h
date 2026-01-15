@@ -735,9 +735,8 @@ struct pi_entry {
 #endif
 
 /* If you are writing a driver, please use dev_dbg instead */
-#if (defined(CONFIG_DYNAMIC_DEBUG) || \
-	(defined(CONFIG_DYNAMIC_DEBUG_CORE) && defined(DYNAMIC_DEBUG_MODULE))) && \
-	(!defined(__PKVM_HYP__) || defined(CONFIG_PKVM_X86_DEBUG))
+#if defined(CONFIG_DYNAMIC_DEBUG) || \
+	(defined(CONFIG_DYNAMIC_DEBUG_CORE) && defined(DYNAMIC_DEBUG_MODULE))
 /* descriptor check is first to prevent flooding with "callbacks suppressed" */
 #define pr_debug_ratelimited(fmt, ...)					\
 do {									\

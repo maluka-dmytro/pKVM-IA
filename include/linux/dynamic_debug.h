@@ -134,9 +134,8 @@ struct ddebug_class_param {
  * pr_debug() and friends are globally enabled or modules have selectively
  * enabled them.
  */
-#if (defined(CONFIG_DYNAMIC_DEBUG) || \
-	(defined(CONFIG_DYNAMIC_DEBUG_CORE) && defined(DYNAMIC_DEBUG_MODULE))) && \
-	(!defined(__PKVM_HYP__) || defined(CONFIG_PKVM_X86_DEBUG))
+#if defined(CONFIG_DYNAMIC_DEBUG) || \
+	(defined(CONFIG_DYNAMIC_DEBUG_CORE) && defined(DYNAMIC_DEBUG_MODULE))
 
 extern __printf(2, 3)
 void __dynamic_pr_debug(struct _ddebug *descriptor, const char *fmt, ...);
