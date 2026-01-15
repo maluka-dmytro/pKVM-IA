@@ -678,4 +678,6 @@ struct vmx_ve_information {
 	u16 eptp_index;
 };
 
+#define MAX_VMX_EXIT_REASONS		(EXIT_REASON_MSR_WRITE_IMM + 1)
+
 #endif
