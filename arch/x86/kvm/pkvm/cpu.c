@@ -96,3 +96,12 @@ void set_x86_spec_ctrl(u64 spec_ctrl)
 	for_each_possible_cpu(cpu)
 		per_cpu(x86_spec_ctrl_current, cpu) |= spec_ctrl;
 }
+
+#ifdef CONFIG_DEBUG_PREEMPT
+void __this_cpu_preempt_check(const char *op) {}
+
+unsigned int debug_smp_processor_id(void)
+{
+	return raw_smp_processor_id();
+}
+#endif
