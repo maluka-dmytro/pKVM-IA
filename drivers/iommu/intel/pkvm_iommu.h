@@ -115,6 +115,17 @@ static inline bool is_iommu_mmio(unsigned long phys)
 bool overlaps_iommu_mmio(unsigned long phys, unsigned long size);
 bool is_dev_in_satc(u16 bdf);
 
+/*
+ * Get the page donated by host for constructing
+ * translation structures(context/pasid).
+ */
+#define pkvm_iommu_ts_page(iommu)	\
+({					\
+	void *ts_page = iommu->ts_page;	\
+	iommu->ts_page = NULL;		\
+	ts_page;			\
+})
+
 int pkvm_intel_iommu_init(void);
 #endif /* !__PKVM_HYP__ */
 #else /* !CONFIG_PKVM_INTEL */
