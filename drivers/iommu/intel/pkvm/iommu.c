@@ -434,6 +434,12 @@ static int pkvm_handle_iommu_hypercall(void *in, void *out)
 	case qi_submit:
 		ret = pkvm_iommu_qi_submit(&data_in->qi_submit);
 		break;
+	case clear_ce:
+		ret = pkvm_iommu_clear_ce(&data_in->clear_ce);
+		break;
+	case set_lm_ce:
+		ret = pkvm_iommu_set_lm_ce(&data_in->set_lm_ce);
+		break;
 	default:
 		pkvm_err("Invalid hypercall: %d\n", data_in->hc_num);
 		ret = -EINVAL;

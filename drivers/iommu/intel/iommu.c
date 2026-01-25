@@ -1490,6 +1490,16 @@ int domain_context_mapping_one(struct dmar_domain *domain,
 
 	pr_debug("Set context mapping for %02x:%02x.%d\n",
 		bus, PCI_SLOT(devfn), PCI_FUNC(devfn));
+
+	if (pkvm_enabled()) {
+		ret = pv_context_mapping(iommu, info, bus, devfn,
+					 virt_to_phys(domain->pgd),
+					 did, domain->agaw);
+		if (ret)
+			pr_err("iommu%d: pv_context_mapping failed(err=%d)\n",
+			       iommu->seq_id, ret);
+		return ret;
+	}
 #endif
 	iommu_lock(iommu);
 	ret = -ENOMEM;
@@ -1738,6 +1748,17 @@ void domain_context_clear_one(struct device_domain_info *info, u8 bus, u8 devfn)
 	struct intel_iommu *iommu = info->iommu;
 	struct context_entry *context;
 	u16 did;
+
+#ifndef __PKVM_HYP__
+	if (pkvm_enabled()) {
+		int ret = pv_context_clear(iommu->reg_phys, bus, devfn, info);
+
+		if (ret)
+			pr_err("iommu%d: LM pv_context_clear failed(err=%d)\n",
+			       iommu->seq_id, ret);
+		return;
+	}
+#endif
 
 	iommu_lock(iommu);
 	context = iommu_context_addr(iommu, bus, devfn, 0);
@@ -4430,6 +4451,15 @@ static int context_setup_pass_through(struct device *dev, u8 bus, u8 devfn)
 	struct device_domain_info *info = dev_iommu_priv_get(dev);
 	struct intel_iommu *iommu = info->iommu;
 	struct context_entry *context;
+
+	if (pkvm_enabled()) {
+		int ret = pv_context_mapping(iommu, info, bus, devfn, 0,
+					     FLPT_DEFAULT_DID, iommu->agaw);
+		if (ret)
+			pr_err("iommu%d: pv_setup_pass_thtough failed(err=%d)\n",
+			       iommu->seq_id, ret);
+		return ret;
+	}
 
 	spin_lock(&iommu->lock);
 	context = iommu_context_addr(iommu, bus, devfn, 1);

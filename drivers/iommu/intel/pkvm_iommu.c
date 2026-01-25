@@ -9,6 +9,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include "iommu.h"
+#include "../iommu-pages.h"
 
 int __init pkvm_host_prepare_iommu(void)
 {
@@ -128,5 +129,64 @@ int pv_qi_submit_sync(struct intel_iommu *iommu, struct qi_desc *desc,
 
 	ret = pkvm_hypercall_inout(iommu_hypercall, &d, &d);
 	kfree(desc_ptr);
+	return ret;
+}
+
+int pv_context_clear(u64 phys, u8 bus, u8 devfn, struct device_domain_info *info)
+{
+	union pkvm_hc_data d = { 0 };
+	struct iommu_hc_data *data = (struct iommu_hc_data *)&d;
+
+	data->clear_ce.phys = phys;
+	data->clear_ce.bus = bus;
+	data->clear_ce.devfn = devfn;
+	data->clear_ce.ats_qdep = info ? info->ats_qdep : 0;
+	data->clear_ce.ats_supported = info ? info->ats_supported : 0;
+	data->clear_ce.ats_enabled = info ? info->ats_enabled : 0;
+	data->hc_num = clear_ce;
+
+	return pkvm_hypercall_inout(iommu_hypercall, &d, &d);
+}
+
+int pv_context_mapping(struct intel_iommu *iommu, struct device_domain_info *info,
+		       u8 bus, u8 devfn, u64 pgd_gpa, u16 did, u8 agaw)
+{
+	union pkvm_hc_data d = { 0 };
+	struct iommu_hc_data *data = (struct iommu_hc_data *)&d;
+	int ret;
+
+	data->set_lm_ce.phys = iommu->reg_phys;
+	data->set_lm_ce.pgd_gpa = pgd_gpa;
+	data->set_lm_ce.did = did;
+	data->set_lm_ce.bus = bus;
+	data->set_lm_ce.devfn = devfn;
+	data->set_lm_ce.agaw = agaw;
+	data->set_lm_ce.ats_qdep = info->ats_qdep;
+	data->set_lm_ce.ats_supported = info->ats_supported;
+	data->set_lm_ce.ats_enabled = info->ats_enabled;
+	data->hc_num = set_lm_ce;
+
+	iommu_lock(iommu);
+	ret = pkvm_hypercall_inout(iommu_hypercall, &d, &d);
+	if (ret == -ENOMEM) {
+		void *ts_page = iommu_alloc_pages_node_sz(iommu->node, GFP_ATOMIC, SZ_4K);
+
+		if (!ts_page) {
+			pr_err("iommu%d: failed to allocate context page\n", iommu->seq_id);
+			iommu_unlock(iommu);
+			return -ENOMEM;
+		}
+		data->set_lm_ce.ts_page_gpa = virt_to_phys(ts_page);
+		ret = pkvm_hypercall_inout(iommu_hypercall, &d, &d);
+
+		/*
+		 * If the hypervisor used ts_page_gpa, it will be set to 0.
+		 * Free the page if hypervisor didn't use the page.
+		 */
+		if (data->set_lm_ce.ts_page_gpa)
+			iommu_free_pages(phys_to_virt(data->set_lm_ce.ts_page_gpa));
+	}
+	iommu_unlock(iommu);
+
 	return ret;
 }
