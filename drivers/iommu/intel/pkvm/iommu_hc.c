@@ -12,6 +12,7 @@
 #include "pkvm/debug.h"
 #include "iommu_hc.h"
 #include "../iommu.h"
+#include "../pasid.h"
 
 int pkvm_iommu_qi_submit(struct qi_submit_data *data)
 {
@@ -142,4 +143,71 @@ int pkvm_iommu_set_lm_ce(struct set_lm_ce_data *data)
 		 data->bus, data->devfn, data->did, domain.pgd, domain.agaw);
 	return domain_context_mapping_one(&domain, iommu, &info, data->did,
 					  data->bus, data->devfn);
+}
+
+/*
+ * Size of pasid directory in bytes, given the max pasid number
+ * A pasid directory entry can address 64 pasids and a pasid
+ * directory page holds 512 entries, hence one pasid dir page can
+ * address (64 * 512) entries.
+ * So pasid_dir_size = (max_pasid / (64 * 512)) * PAGE_SIZE
+ *                   => = (max_pasid >> 15) << PAGE_SHIFT
+ */
+#define pasid_dir_size(max_pasid) ((max_pasid) >> (15 - PAGE_SHIFT))
+
+int pkvm_iommu_set_sm_ce(struct set_sm_ce_data *data)
+{
+	struct intel_iommu *iommu = iommu_from_phys(data->phys);
+	u16 bdf = PCI_DEVID(data->bus, data->devfn);
+	struct device_domain_info info = { 0 };
+	struct dev_iommu dev_iommu = { 0 };
+	struct pasid_table table = { 0 };
+	struct device dev = { 0 };
+	int ret;
+
+	if (!iommu)
+		return -EINVAL;
+
+	if (data->ats_qdep > PCI_ATS_MAX_QDEP)
+		return -EINVAL;
+
+	if ((data->ats_supported || data->ats_enabled) &&
+	    !is_dev_in_satc(bdf))
+		return -EPERM;
+
+	info.bus = data->bus;
+	info.devfn = data->devfn;
+	info.ats_qdep = data->ats_qdep;
+	info.ats_supported = data->ats_supported;
+	info.ats_enabled = data->ats_enabled;
+	info.pasid_supported = data->pasid_supported;
+	info.pasid_enabled = data->pasid_enabled;
+	table.table = pkvm_host_gpa_to_virt(data->pasid_table_gpa);
+	table.max_pasid = data->max_pasid;
+	info.pasid_table = &table;
+	info.iommu = iommu;
+
+	dev_iommu.priv = (void *)&info;
+	dev.iommu = &dev_iommu;
+
+	ret = accept_ts_page_donation(iommu, &data->ts_page_gpa);
+	if (ret)
+		return ret;
+
+	ret = pkvm_host_donate_hyp_share_ro(data->pasid_table_gpa,
+					    pasid_dir_size(data->max_pasid), true);
+	if (ret) {
+		pkvm_err("failed to write protect pasid dir for dev[%x:%x](err=%d)\n",
+			 data->bus, data->devfn, ret);
+		return ret;
+	}
+
+	pkvm_dbg("%s: dev[%x:%x], ats_qdep: %d, pasid_table_gpa: %llx\n", __func__,
+		 data->bus, data->devfn, info.ats_qdep, data->pasid_table_gpa);
+	ret = device_pasid_table_setup(&dev, data->bus, data->devfn);
+
+	if (ret)
+		pkvm_hyp_donate_host(data->pasid_table_gpa,
+				     pasid_dir_size(data->max_pasid), false);
+	return ret;
 }

@@ -9,6 +9,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include "iommu.h"
+#include "pasid.h"
 #include "../iommu-pages.h"
 
 int __init pkvm_host_prepare_iommu(void)
@@ -185,6 +186,46 @@ int pv_context_mapping(struct intel_iommu *iommu, struct device_domain_info *inf
 		 */
 		if (data->set_lm_ce.ts_page_gpa)
 			iommu_free_pages(phys_to_virt(data->set_lm_ce.ts_page_gpa));
+	}
+	iommu_unlock(iommu);
+
+	return ret;
+}
+
+int pv_pasid_table_setup(struct intel_iommu *iommu, struct device_domain_info *info,
+			 u8 bus, u8 devfn)
+{
+	union pkvm_hc_data d = { 0 };
+	struct iommu_hc_data *data = (struct iommu_hc_data *)&d;
+	int ret;
+
+	data->set_sm_ce.phys = iommu->reg_phys;
+	data->set_sm_ce.pasid_table_gpa = virt_to_phys(info->pasid_table->table);
+	data->set_sm_ce.max_pasid = info->pasid_table->max_pasid;
+	data->set_sm_ce.bus = bus;
+	data->set_sm_ce.devfn = devfn;
+	data->set_sm_ce.ats_supported = info->ats_supported;
+	data->set_sm_ce.ats_enabled = info->ats_enabled;
+	data->set_sm_ce.pasid_supported = info->pasid_supported;
+	data->set_sm_ce.pasid_enabled = info->pasid_enabled;
+	data->set_sm_ce.ats_qdep = info->ats_qdep;
+	data->hc_num = set_sm_ce;
+
+	iommu_lock(iommu);
+	ret = pkvm_hypercall_inout(iommu_hypercall, &d, &d);
+	if (ret == -ENOMEM) {
+		void *context = iommu_alloc_pages_node_sz(iommu->node, GFP_ATOMIC, SZ_4K);
+
+		if (!context) {
+			pr_err("iommu%d: failed to allocate context page\n", iommu->seq_id);
+			iommu_unlock(iommu);
+			return -ENOMEM;
+		}
+		data->set_sm_ce.ts_page_gpa = virt_to_phys(context);
+		ret = pkvm_hypercall_inout(iommu_hypercall, &d, &d);
+
+		if (data->set_sm_ce.ts_page_gpa)
+			iommu_free_pages(phys_to_virt(data->set_sm_ce.ts_page_gpa));
 	}
 	iommu_unlock(iommu);
 

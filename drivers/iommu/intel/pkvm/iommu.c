@@ -440,6 +440,9 @@ static int pkvm_handle_iommu_hypercall(void *in, void *out)
 	case set_lm_ce:
 		ret = pkvm_iommu_set_lm_ce(&data_in->set_lm_ce);
 		break;
+	case set_sm_ce:
+		ret = pkvm_iommu_set_sm_ce(&data_in->set_sm_ce);
+		break;
 	default:
 		pkvm_err("Invalid hypercall: %d\n", data_in->hc_num);
 		ret = -EINVAL;
