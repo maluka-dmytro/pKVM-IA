@@ -961,6 +961,7 @@ void intel_pasid_teardown_sm_context(struct device *dev)
 
 	pci_for_each_dma_alias(to_pci_dev(dev), pci_pasid_table_teardown, dev);
 }
+#endif /* !__PKVM_HYP__ */
 
 /*
  * Get the PASID directory size for scalable mode context entry.
@@ -1007,24 +1008,26 @@ static int context_entry_set_pasid_table(struct context_entry *context,
 	return 0;
 }
 
-static int device_pasid_table_setup(struct device *dev, u8 bus, u8 devfn)
+int device_pasid_table_setup(struct device *dev, u8 bus, u8 devfn)
 {
 	struct device_domain_info *info = dev_iommu_priv_get(dev);
 	struct intel_iommu *iommu = info->iommu;
 	struct context_entry *context;
 
-	spin_lock(&iommu->lock);
+	iommu_lock(iommu);
 	context = iommu_context_addr(iommu, bus, devfn, true);
 	if (!context) {
-		spin_unlock(&iommu->lock);
+		iommu_unlock(iommu);
 		return -ENOMEM;
 	}
 
 	if (context_present(context) && !context_copied(iommu, bus, devfn)) {
-		spin_unlock(&iommu->lock);
+		iommu_unlock(iommu);
 		return 0;
 	}
 
+#ifndef __PKVM_HYP__
+	BUG_ON(pkvm_enabled() && context_copied(iommu, bus, devfn));
 	if (context_copied(iommu, bus, devfn)) {
 		context_clear_entry(context);
 		__iommu_flush_cache(iommu, context, sizeof(*context));
@@ -1053,9 +1056,10 @@ static int device_pasid_table_setup(struct device *dev, u8 bus, u8 devfn)
 		 */
 		clear_context_copied(iommu, bus, devfn);
 	}
+#endif /* !__PKVM_HYP__ */
 
 	context_entry_set_pasid_table(context, dev);
-	spin_unlock(&iommu->lock);
+	iommu_unlock(iommu);
 
 	/*
 	 * It's a non-present to present mapping. If hardware doesn't cache
@@ -1074,6 +1078,7 @@ static int device_pasid_table_setup(struct device *dev, u8 bus, u8 devfn)
 	return 0;
 }
 
+#ifndef __PKVM_HYP__
 static int pci_pasid_table_setup(struct pci_dev *pdev, u16 alias, void *data)
 {
 	struct device *dev = data;

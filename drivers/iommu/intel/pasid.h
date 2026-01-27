@@ -322,4 +322,6 @@ void intel_pasid_setup_page_snoop_control(struct intel_iommu *iommu,
 					  struct device *dev, u32 pasid);
 int intel_pasid_setup_sm_context(struct device *dev);
 void intel_pasid_teardown_sm_context(struct device *dev);
+
+int device_pasid_table_setup(struct device *dev, u8 bus, u8 devfn);
 #endif /* __INTEL_PASID_H */
