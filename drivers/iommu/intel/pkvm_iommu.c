@@ -335,3 +335,38 @@ int pv_pasid_teardown(struct device_domain_info *info, u32 pasid)
 
 	return pkvm_hypercall_inout(iommu_hypercall, &d, &d);
 }
+
+int pv_alloc_domain(struct device_domain_info *info, struct dmar_domain *domain)
+{
+	union pkvm_hc_data d = { 0 };
+	struct iommu_hc_data *data = (struct iommu_hc_data *)&d;
+	int ret;
+
+	data->alloc_domain.phys = info->iommu->reg_phys;
+	data->alloc_domain.bdf = PCI_DEVID(info->bus, info->devfn);
+	data->alloc_domain.use_first_level = domain->use_first_level;
+	data->alloc_domain.pgd_gpa = virt_to_phys(domain->pgd);
+	data->alloc_domain.gaw = domain->gaw;
+	data->alloc_domain.agaw = domain->agaw;
+	data->alloc_domain.max_addr = domain->max_addr;
+	data->alloc_domain.iommu_coherency = domain->iommu_coherency;
+	data->alloc_domain.iommu_superpage = domain->iommu_superpage;
+	data->hc_num = alloc_domain;
+
+	ret = pkvm_hypercall_inout(iommu_hypercall, &d, &d);
+	if (ret)
+		pr_err("%s: pkvm failed to alloc domain for device[%x:%x.%x] (err=%d)\n", __func__,
+		       info->bus, PCI_SLOT(info->devfn), PCI_FUNC(info->devfn), ret);
+
+	return ret;
+}
+
+int pv_free_domain(struct dmar_domain *domain)
+{
+	union pkvm_hc_data d = { 0 };
+	struct iommu_hc_data *data = (struct iommu_hc_data *)&d;
+
+	data->free_domain.pgd_gpa = virt_to_phys(domain->pgd);
+	data->hc_num = free_domain;
+	return pkvm_hypercall_inout(iommu_hypercall, &d, &d);
+}

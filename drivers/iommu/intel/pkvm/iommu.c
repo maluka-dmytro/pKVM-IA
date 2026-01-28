@@ -8,6 +8,7 @@
 #include "pkvm/pkvm.h"
 #include "pkvm/debug.h"
 #include "iommu.h"
+#include "iommu_domain.h"
 
 /*
  * IOMMU supported page size and page levels for second stage page table.
@@ -460,6 +461,12 @@ static int pkvm_handle_iommu_hypercall(void *in, void *out)
 		break;
 	case pasid_teardown:
 		ret = pkvm_iommu_pasid_teardown(&data_in->pasid_teardown);
+		break;
+	case alloc_domain:
+		ret = pkvm_iommu_alloc_domain(&data_in->alloc_domain);
+		break;
+	case free_domain:
+		ret = pkvm_iommu_free_domain(&data_in->free_domain);
 		break;
 	default:
 		pkvm_err("Invalid hypercall: %d\n", data_in->hc_num);

@@ -4,7 +4,7 @@
 #ifndef _PKVM_IOMMU_DOMAIN_H_
 #define _PKVM_IOMMU_DOMAIN_H_
 
-struct dmar_domain *pkvm_alloc_iommu_domain(void *pgd);
+struct dmar_domain *pkvm_alloc_iommu_domain(struct alloc_domain_data *data);
 struct dmar_domain *pkvm_get_iommu_domain(void *pgd);
 struct dmar_domain *pkvm_get_iommu_domain_noref(void *pgd);
 void pkvm_put_iommu_domain(struct dmar_domain *domain);

@@ -16,6 +16,8 @@ enum iommu_hc_num {
 	pasid_setup_fl,
 	pasid_setup_sl,
 	pasid_teardown,
+	alloc_domain,
+	free_domain,
 };
 
 struct qi_submit_data {
@@ -103,6 +105,22 @@ struct pasid_teardown_data {
 	u8 ats_supported: 1;
 };
 
+struct alloc_domain_data {
+	u64 phys;
+	u64 max_addr;
+	u64 pgd_gpa;
+	u16 bdf;
+	u16 gaw;
+	u8 agaw;
+	u8 iommu_superpage;
+	u8 iommu_coherency;
+	u8 use_first_level;
+};
+
+struct free_domain_data {
+	u64 pgd_gpa;
+};
+
 struct iommu_hc_data {
 	union {
 		struct qi_submit_data qi_submit;
@@ -112,6 +130,8 @@ struct iommu_hc_data {
 		struct pasid_setup_fl_data pasid_setup_fl;
 		struct pasid_setup_sl_data pasid_setup_sl;
 		struct pasid_teardown_data pasid_teardown;
+		struct alloc_domain_data alloc_domain;
+		struct free_domain_data free_domain;
 	};
 	u8 hc_num;
 };
@@ -124,4 +144,6 @@ int pkvm_iommu_set_sm_ce(struct set_sm_ce_data *data);
 int pkvm_iommu_pasid_setup_fl(struct pasid_setup_fl_data *data);
 int pkvm_iommu_pasid_setup_sl(struct pasid_setup_sl_data *data);
 int pkvm_iommu_pasid_teardown(struct pasid_teardown_data *data);
+int pkvm_iommu_alloc_domain(struct alloc_domain_data *data);
+int pkvm_iommu_free_domain(struct free_domain_data *data);
 #endif /* _PKVM_INTEL_IOMMU_HC_H_ */
