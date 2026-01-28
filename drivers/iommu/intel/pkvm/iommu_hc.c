@@ -490,7 +490,9 @@ int pkvm_iommu_free_domain(struct free_domain_data *data)
 		pkvm_err("%s: no domain exist for pgd: %p\n", __func__, pgd);
 		return -EINVAL;
 	}
-	ret = pkvm_free_iommu_domain(domain);
+
+	memset(&data->mc, 0, sizeof(data->mc));
+	ret = pkvm_free_iommu_domain(domain, &data->mc);
 	if (ret) {
 		pkvm_err("%s: failed to free the domain[pgd:%p] (err=%d)\n",
 			 __func__, pgd, ret);

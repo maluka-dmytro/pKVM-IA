@@ -3,6 +3,7 @@
 
 
 #include <linux/hashtable.h>
+#include <linux/bug.h>
 #include <asm/pkvm_spinlock.h>
 #include "pkvm/debug.h"
 #include "pkvm/memory.h"
@@ -127,7 +128,59 @@ void pkvm_release_domain_cache_tag_unassign(void *pgd, int did, u32 pasid,
 	pkvm_put_iommu_domain(domain);
 }
 
-int pkvm_free_iommu_domain(struct dmar_domain *domain)
+/*
+ * memcache helper functions.
+ */
+
+static int refill_domain_memcache(struct dmar_domain *domain,
+				  struct pkvm_memcache *host_mc)
+{
+	struct pkvm_memcache *mc = &domain->mc;
+	unsigned long min_pages;
+
+	/*
+	 * Host expects pKVM to drain the memcache fully as it is
+	 * not persistent. Host makes the hypercall without memcache
+	 * the first time and passes memcache next time only if the
+	 * initial hypercall failed with ENOMEM.
+	 */
+	min_pages = mc->count + host_mc->count;
+	while (mc->count < min_pages) {
+		phys_addr_t *p;
+		struct pkvm_page_range page_range;
+
+		page_range = pop_pkvm_memcache(host_mc, pkvm_host_gpa_to_virt);
+		p = pkvm_host_gpa_to_virt(page_range.addr);
+
+		if (!p)
+			return -ENOMEM;
+
+		if (WARN_ON(pkvm_host_donate_hyp_share_ro(__pkvm_pa(p), VTD_PAGE_SIZE, true)))
+			return -EBUSY;
+		push_pkvm_memcache(mc, p, PAGE_SIZE, hyp_virt_to_phys);
+	}
+
+	return 0;
+}
+
+static void free_domain_memcache(struct dmar_domain *domain,
+				 struct pkvm_memcache *teardown_mc)
+{
+	struct pkvm_memcache *mc = &domain->mc;
+
+	while (mc->count) {
+		void *addr;
+		struct pkvm_page_range page_range;
+
+		page_range = pop_pkvm_memcache(mc, hyp_phys_to_virt);
+		addr = hyp_phys_to_virt(page_range.addr);
+
+		push_pkvm_memcache(teardown_mc, addr, PAGE_SIZE, pkvm_virt_to_host_gpa);
+		pkvm_hyp_donate_host(page_range.addr, VTD_PAGE_SIZE, false);
+	}
+}
+
+int pkvm_free_iommu_domain(struct dmar_domain *domain, struct pkvm_memcache *teardown_mc)
 {
 	if (atomic_cmpxchg(&domain->refcount, 1, 0) != 1) {
 		pkvm_err("%s: domain[pgd:%p] has users, refcount %d\n",
@@ -135,7 +188,19 @@ int pkvm_free_iommu_domain(struct dmar_domain *domain)
 		return -EBUSY;
 	}
 
-	pkvm_dbg("%s: freed domain pgd: %p\n", __func__, domain->pgd);
+	/* Unmap any remaining mappings. */
+	domain_unmap(domain, 0, DOMAIN_MAX_PFN(domain->gaw), NULL);
+	free_domain_memcache(domain, teardown_mc);
+	/*
+	 * pgd was not allocated through memcache, but its safe to return to
+	 * memcache as the teardown mc frees it the same way host driver frees
+	 * the pages.
+	 */
+	push_pkvm_memcache(teardown_mc, domain->pgd, PAGE_SIZE, pkvm_virt_to_host_gpa);
+
+	pkvm_dbg("%s: freeing domain[pgd: %p], freed pages: %lu\n",
+		 __func__, domain->pgd, teardown_mc->count);
+
 	pkvm_spin_lock(&iommu_domain_lock);
 	hash_del(&domain->hnode);
 	__clear_bit(domain->index, iommu_domains_bitmap);
@@ -183,4 +248,75 @@ struct dmar_domain *pkvm_alloc_iommu_domain(struct alloc_domain_data *data)
 	pkvm_spin_unlock(&iommu_domain_lock);
 
 	return domain;
+}
+
+int pkvm_iommu_domain_map(struct domain_map_data *in, struct domain_map_data *out)
+{
+	struct dmar_domain *domain;
+	u64 size;
+	int ret;
+
+	/* Check for possible overfows that may have security implications */
+	if (check_mul_overflow(in->nr_pages, VTD_PAGE_SIZE, &size))
+		return -EINVAL;
+	if (in->iov_pfn + in->nr_pages < in->iov_pfn)
+		return -EINVAL;
+	if ((in->iov_pfn << VTD_PAGE_SHIFT) < in->iov_pfn)
+		return -EINVAL;
+	if ((in->iov_pfn << VTD_PAGE_SHIFT) + size < in->iov_pfn)
+		return -EINVAL;
+	if ((in->phys_pfn << VTD_PAGE_SHIFT) < in->phys_pfn)
+		return -EINVAL;
+	if ((in->phys_pfn << VTD_PAGE_SHIFT) + size < in->phys_pfn)
+		return -EINVAL;
+
+	domain = pkvm_get_iommu_domain(pkvm_host_gpa_to_virt(in->pgd_gpa));
+	if(!domain) {
+		pkvm_err("%s, failed to get the domain [pgd:%llx]\n",
+				__func__, in->pgd_gpa);
+		return -EINVAL;
+	}
+
+	pkvm_spin_lock(&domain->lock);
+	if (in->mc.count) {
+		ret = refill_domain_memcache(domain, &in->mc);
+		if (ret) {
+			pkvm_err("pkvm: %s: failed to refill memcache for domain[pgd: %p] (err=%d)\n",
+				 __func__, domain->pgd, ret);
+			goto out_unlock;
+		}
+	}
+	if (domain->mc.count < __pkvm_pgtable_max_pages(in->nr_pages)) {
+		ret = -ENOMEM;
+		goto out_unlock;
+	}
+
+	ret = domain_map(domain, in->iov_pfn, in->phys_pfn, in->nr_pages, in->prot, 0);
+
+out_unlock:
+	pkvm_spin_unlock(&domain->lock);
+	pkvm_put_iommu_domain(domain);
+
+	*out = *in;
+	return ret;
+}
+
+int pkvm_iommu_domain_unmap(u64 pgd_gpa, u64 start_pfn, u64 last_pfn)
+{
+	struct dmar_domain *domain;
+
+	domain = pkvm_get_iommu_domain(pkvm_host_gpa_to_virt(pgd_gpa));
+	if (!domain) {
+		pkvm_err("%s, failed to get the domain [pgd:%llx]\n",
+				__func__, pgd_gpa);
+		return -EINVAL;
+	}
+
+	pkvm_spin_lock(&domain->lock);
+	domain_unmap(domain, start_pfn, last_pfn, NULL);
+	pkvm_spin_unlock(&domain->lock);
+
+	pkvm_put_iommu_domain(domain);
+
+	return 0;
 }

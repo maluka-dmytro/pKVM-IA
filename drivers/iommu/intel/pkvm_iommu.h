@@ -105,6 +105,11 @@ int pv_pasid_setup_sl(struct device_domain_info *info, phys_addr_t ssptptr,
 int pv_pasid_teardown(struct device_domain_info *info, u32 pasid);
 int pv_alloc_domain(struct device_domain_info *info, struct dmar_domain *domain);
 int pv_free_domain(struct dmar_domain *domain);
+int pv_domain_mapping(struct dmar_domain *domain, unsigned long iov_pfn,
+		      unsigned long phys_pfn, unsigned long nr_pages,
+		      int prot, int gfp);
+int pv_domain_unmapping(struct dmar_domain *domain, unsigned long start_pfn,
+			unsigned long last_pfn);
 #else /* __PKVM_HYP__ */
 #include "pkvm/memory.h"
 
@@ -211,6 +216,17 @@ static inline int pv_alloc_domain(struct device_domain_info *info,
 	return -EOPNOTSUPP;
 }
 static inline int pv_free_domain(struct dmar_domain *domain)
+{
+	return -EOPNOTSUPP;
+}
+static inline int pv_domain_mapping(struct dmar_domain *domain, unsigned long iov_pfn,
+				    unsigned long phys_pfn, unsigned long nr_pages,
+				    int prot, int gfp)
+{
+	return -EOPNOTSUPP;
+}
+static inline int pv_domain_unmapping(struct dmar_domain *domain, unsigned long start_pfn,
+				      unsigned long last_pfn)
 {
 	return -EOPNOTSUPP;
 }

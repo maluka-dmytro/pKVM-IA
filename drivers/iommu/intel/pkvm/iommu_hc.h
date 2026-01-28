@@ -119,6 +119,7 @@ struct alloc_domain_data {
 
 struct free_domain_data {
 	u64 pgd_gpa;
+	struct pkvm_memcache mc;
 };
 
 struct iommu_hc_data {

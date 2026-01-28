@@ -480,6 +480,8 @@ static int pkvm_handle_iommu_hypercall(void *in, void *out)
 struct pkvm_iommu_ops iommu_ops = {
 	.mmio_read = pkvm_iommu_mmio_read,
 	.mmio_write = pkvm_iommu_mmio_write,
+	.domain_map = pkvm_iommu_domain_map,
+	.domain_unmap = pkvm_iommu_domain_unmap,
 	.hypercall = pkvm_handle_iommu_hypercall,
 };
 

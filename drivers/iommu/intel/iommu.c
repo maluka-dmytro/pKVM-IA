@@ -3695,18 +3695,15 @@ static void intel_iommu_domain_free(struct iommu_domain *domain)
 		struct iommu_pages_list freelist =
 			IOMMU_PAGES_LIST_INIT(freelist);
 
-		domain_unmap(dmar_domain, 0, DOMAIN_MAX_PFN(dmar_domain->gaw),
-			     &freelist);
-		iommu_put_pages_list(&freelist);
-
 		if (pkvm_enabled()) {
 			int ret = pv_free_domain(dmar_domain);
-
 			if (ret)
-				pr_warn("%s: pkvm failed to free domain[pgd=%p] (err=%d)\n",
-					__func__, dmar_domain->pgd, ret);
-			else
-				iommu_free_pages(dmar_domain->pgd);
+				pr_warn("pv_free_domain failed for domain[pgd: %p!\n",
+					dmar_domain->pgd);
+		} else {
+			domain_unmap(dmar_domain, 0, DOMAIN_MAX_PFN(dmar_domain->gaw),
+				     &freelist);
+			iommu_put_pages_list(&freelist);
 		}
 	}
 
@@ -3864,6 +3861,11 @@ static int intel_iommu_map(struct iommu_domain *domain,
 	/* Round up size to next multiple of PAGE_SIZE, if it and
 	   the low bits of hpa would take us onto the next page */
 	size = aligned_nrpages(hpa, size);
+
+	if (pkvm_enabled())
+		return pv_domain_mapping(dmar_domain, iova >> VTD_PAGE_SHIFT,
+					 hpa >> VTD_PAGE_SHIFT, size, prot, gfp);
+
 	return domain_map(dmar_domain, iova >> VTD_PAGE_SHIFT,
 				hpa >> VTD_PAGE_SHIFT, size, prot, gfp);
 }
@@ -3909,6 +3911,15 @@ static size_t intel_iommu_unmap(struct iommu_domain *domain,
 
 	start_pfn = iova >> VTD_PAGE_SHIFT;
 	last_pfn = (iova + size - 1) >> VTD_PAGE_SHIFT;
+
+	if (pkvm_enabled()) {
+		int ret = pv_domain_unmapping(dmar_domain, start_pfn, last_pfn);
+
+		if (ret)
+			pr_err("%s: domain unmap IOVA[start: %lx, end: %lx] failed (err=%d)\n",
+			       __func__, start_pfn, last_pfn, ret);
+		return size;
+	}
 
 	domain_unmap(dmar_domain, start_pfn, last_pfn, &gather->freelist);
 
