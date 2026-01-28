@@ -5,12 +5,8 @@
 #include "pkvm.h"
 #include "trace.h"
 
-struct perf_ctrl {
-	unsigned int age;
-	bool on;
-};
+static bool trace_on;
 static DEFINE_PER_CPU(struct vmexit_perf, hvcpu_perf);
-static DEFINE_PER_CPU(struct perf_ctrl, perf_ctrl);
 
 static inline bool is_host_vcpu(struct kvm_vcpu *vcpu)
 {
@@ -23,14 +19,41 @@ static inline struct vmexit_perf *vcpu_to_perf(struct kvm_vcpu *vcpu)
 				    &to_pkvm_vcpu(vcpu)->perf;
 }
 
-static void refresh_vmexit_perf(struct perf_ctrl *pctrl, struct vmexit_perf *perf)
+static void refresh_vmexit_perf(struct vmexit_perf *perf)
 {
 	pkvm_spin_lock(&perf->lock);
 	memset(perf->data.vmexit_reasons, 0, sizeof(perf->data.vmexit_reasons));
 	memset(perf->data.hypercalls, 0, sizeof(perf->data.hypercalls));
 	pkvm_spin_unlock(&perf->lock);
+}
 
-	perf->age = pctrl->age;
+static void refresh_host_vm_trace(void)
+{
+	int cpu;
+
+	for_each_possible_cpu(cpu)
+		refresh_vmexit_perf(per_cpu_ptr(&hvcpu_perf, cpu));
+}
+
+static int __refresh_guest_vm_trace(struct pkvm_vm *vm, void *param)
+{
+	int i;
+
+	pkvm_spin_lock(&vm->lock);
+	for (i = 0; i < vm->kvm.created_vcpus; i++) {
+		if (!vm->vcpus[i])
+			continue;
+
+		refresh_vmexit_perf(&vm->vcpus[i]->perf);
+	}
+	pkvm_spin_unlock(&vm->lock);
+
+	return 0;
+}
+
+static void refresh_guest_vm_trace(void)
+{
+	pkvm_walk_each_vm(__refresh_guest_vm_trace, NULL);
 }
 
 static void copy_vmexit_perf_data(struct perf_data *dst, struct vmexit_perf *perf)
@@ -105,15 +128,12 @@ static void copy_guest_vm_trace(int vm_handle, void *dst, unsigned long size)
 
 void pkvm_trace_vmexit_start(struct kvm_vcpu *vcpu)
 {
-	struct perf_ctrl *pctrl = this_cpu_ptr(&perf_ctrl);
 	struct vmexit_perf *perf;
 
-	if (!pctrl->on)
+	if (!READ_ONCE(trace_on))
 		return;
 
 	perf = vcpu_to_perf(vcpu);
-	if (pctrl->age != perf->age)
-		refresh_vmexit_perf(pctrl, perf);
 
 	perf->rax = vcpu->arch.regs[VCPU_REGS_RAX];
 	perf->tsc = rdtsc_ordered();
@@ -121,21 +141,16 @@ void pkvm_trace_vmexit_start(struct kvm_vcpu *vcpu)
 
 void pkvm_trace_vmexit_end(struct kvm_vcpu *vcpu, u32 reason)
 {
-	struct perf_ctrl *pctrl = this_cpu_ptr(&perf_ctrl);
 	struct vmexit_perf *perf;
 	unsigned long long cycles;
 
-	if (!pctrl->on)
+	if (!READ_ONCE(trace_on))
 		return;
 
 	if (reason >= MAX_EXIT_REASONS)
 		return;
 
 	perf = vcpu_to_perf(vcpu);
-	if (pctrl->age != perf->age) {
-		refresh_vmexit_perf(pctrl, perf);
-		return;
-	}
 
 	cycles = rdtsc_ordered() - perf->tsc;
 
@@ -165,14 +180,12 @@ void pkvm_vcpu_perf_init(struct kvm_vcpu *vcpu)
 
 void pkvm_enable_vmexit_trace(bool en)
 {
-	struct perf_ctrl *pctrl = this_cpu_ptr(&perf_ctrl);
-
-	if (en && !pctrl->on) {
-		pctrl->age++;
-		pctrl->on = true;
-	} else if (!en && pctrl->on) {
-		pctrl->on = false;
+	if (en) {
+		refresh_host_vm_trace();
+		refresh_guest_vm_trace();
 	}
+
+	WRITE_ONCE(trace_on, en);
 }
 
 int pkvm_dump_vmexit_trace(phys_addr_t phys, unsigned long size, int vm_handle)
