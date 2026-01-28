@@ -738,6 +738,7 @@ struct dmar_domain {
 
 	atomic_t refcount;
 	unsigned int index;
+	struct pkvm_memcache mc;
 	/*
 	 * Lock to protect the mapping operations
 	 * on this domain.
@@ -1077,6 +1078,14 @@ static inline int width_to_agaw(int width)
 {
 	return DIV_ROUND_UP(width - 30, LEVEL_STRIDE);
 }
+
+int domain_map(struct dmar_domain *domain, unsigned long iov_pfn,
+		 unsigned long phys_pfn, unsigned long nr_pages, int prot,
+		 gfp_t gfp);
+
+void domain_unmap(struct dmar_domain *domain, unsigned long start_pfn,
+			 unsigned long last_pfn,
+			 struct iommu_pages_list *freelist);
 
 static inline unsigned int level_to_offset_bits(int level)
 {

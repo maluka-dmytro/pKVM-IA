@@ -106,6 +106,18 @@ int pv_pasid_teardown(struct device_domain_info *info, u32 pasid);
 int pv_alloc_domain(struct device_domain_info *info, struct dmar_domain *domain);
 int pv_free_domain(struct dmar_domain *domain);
 #else /* __PKVM_HYP__ */
+#include "pkvm/memory.h"
+
+static inline void *hyp_phys_to_virt(phys_addr_t phys)
+{
+	return __pkvm_va(phys);
+}
+
+static inline phys_addr_t hyp_virt_to_phys(void *addr)
+{
+	return __pkvm_pa(addr);
+}
+
 static inline bool iommu_supports_2m_page(void)
 {
 	return iommu_pgsz_mask & (1 << PG_LEVEL_2M);
