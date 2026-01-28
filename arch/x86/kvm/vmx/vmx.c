@@ -4996,7 +4996,16 @@ static u32 vmx_secondary_exec_control(struct vcpu_vmx *vmx)
 #endif
 		exec_control &= ~SECONDARY_EXEC_BUS_LOCK_DETECTION;
 
+#ifndef __PKVM_HYP__
 	if (!kvm_notify_vmexit_enabled(vcpu->kvm))
+#else
+	/*
+	 * Similar with init_vmcs, respect the notify_vmexit_flags from the host
+	 * side. See the comments in init_vmcs.
+	 */
+	if (!kvm_caps.has_notify_vmexit ||
+	    !kvm_notify_vmexit_enabled(to_pkvm(vcpu->kvm)->shared_kvm))
+#endif
 		exec_control &= ~SECONDARY_EXEC_NOTIFY_VM_EXITING;
 
 	return exec_control;
@@ -5145,8 +5154,20 @@ static void init_vmcs(struct vcpu_vmx *vmx)
 		vmx->ple_window_dirty = true;
 	}
 
+#ifndef __PKVM_HYP__
 	if (kvm_notify_vmexit_enabled(kvm))
 		vmcs_write32(NOTIFY_WINDOW, kvm->arch.notify_window);
+#else
+	/*
+	 * Allow the host to control the notify_window and notify_vmexit_flags
+	 * to determine the notify vmexit if there is has_notify_vmexit
+	 * capability. Thus respect the settings from the host side in this
+	 * case.
+	 */
+	if (kvm_caps.has_notify_vmexit &&
+	    kvm_notify_vmexit_enabled(to_pkvm(kvm)->shared_kvm))
+		vmcs_write32(NOTIFY_WINDOW, to_pkvm(kvm)->shared_kvm->arch.notify_window);
+#endif
 
 	vmcs_write32(PAGE_FAULT_ERROR_CODE_MASK, 0);
 	vmcs_write32(PAGE_FAULT_ERROR_CODE_MATCH, 0);
@@ -6680,13 +6701,14 @@ static int handle_bus_lock_vmexit(struct kvm_vcpu *vcpu)
 	return 1;
 }
 
-#ifndef __PKVM_HYP__
 static int handle_notify(struct kvm_vcpu *vcpu)
 {
 	unsigned long exit_qual = vmx_get_exit_qual(vcpu);
+#ifndef __PKVM_HYP__
 	bool context_invalid = exit_qual & NOTIFY_VM_CONTEXT_INVALID;
 
 	++vcpu->stat.notify_window_exits;
+#endif
 
 	/*
 	 * Notify VM exit happened while executing iret from NMI,
@@ -6696,6 +6718,7 @@ static int handle_notify(struct kvm_vcpu *vcpu)
 		vmcs_set_bits(GUEST_INTERRUPTIBILITY_INFO,
 			      GUEST_INTR_STATE_NMI);
 
+#ifndef __PKVM_HYP__
 	if (vcpu->kvm->arch.notify_vmexit_flags & KVM_X86_NOTIFY_VMEXIT_USER ||
 	    context_invalid) {
 		vcpu->run->exit_reason = KVM_EXIT_NOTIFY;
@@ -6705,8 +6728,12 @@ static int handle_notify(struct kvm_vcpu *vcpu)
 	}
 
 	return 1;
+#else
+	return 0;
+#endif
 }
 
+#ifndef __PKVM_HYP__
 static int vmx_get_msr_imm_reg(struct kvm_vcpu *vcpu)
 {
 	return vmx_get_instr_info_reg(vmcs_read32(VMX_INSTRUCTION_INFO));
@@ -6815,8 +6842,8 @@ static int (*kvm_vmx_exit_handlers[])(struct kvm_vcpu *vcpu) = {
 #endif
 	[EXIT_REASON_ENCLS]		      = handle_encls,
 	[EXIT_REASON_BUS_LOCK]                = handle_bus_lock_vmexit,
-#ifndef __PKVM_HYP__
 	[EXIT_REASON_NOTIFY]		      = handle_notify,
+#ifndef __PKVM_HYP__
 	[EXIT_REASON_SEAMCALL]		      = handle_tdx_instruction,
 	[EXIT_REASON_TDCALL]		      = handle_tdx_instruction,
 	[EXIT_REASON_MSR_READ_IMM]            = handle_rdmsr_imm,
