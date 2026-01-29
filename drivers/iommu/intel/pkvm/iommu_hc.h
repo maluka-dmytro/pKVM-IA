@@ -15,6 +15,7 @@ enum iommu_hc_num {
 	set_sm_ce,
 	pasid_setup_fl,
 	pasid_setup_sl,
+	pasid_teardown,
 };
 
 struct qi_submit_data {
@@ -92,6 +93,16 @@ struct pasid_setup_sl_data {
 	u8 ats_supported: 1;
 };
 
+struct pasid_teardown_data {
+	u64 phys;
+	u32 pasid;
+	u8 bus;
+	u8 devfn;
+	u8 ats_qdep;
+	u8 ats_enabled: 1;
+	u8 ats_supported: 1;
+};
+
 struct iommu_hc_data {
 	union {
 		struct qi_submit_data qi_submit;
@@ -100,6 +111,7 @@ struct iommu_hc_data {
 		struct set_sm_ce_data set_sm_ce;
 		struct pasid_setup_fl_data pasid_setup_fl;
 		struct pasid_setup_sl_data pasid_setup_sl;
+		struct pasid_teardown_data pasid_teardown;
 	};
 	u8 hc_num;
 };
@@ -111,4 +123,5 @@ int pkvm_iommu_set_lm_ce(struct set_lm_ce_data *data);
 int pkvm_iommu_set_sm_ce(struct set_sm_ce_data *data);
 int pkvm_iommu_pasid_setup_fl(struct pasid_setup_fl_data *data);
 int pkvm_iommu_pasid_setup_sl(struct pasid_setup_sl_data *data);
+int pkvm_iommu_pasid_teardown(struct pasid_teardown_data *data);
 #endif /* _PKVM_INTEL_IOMMU_HC_H_ */

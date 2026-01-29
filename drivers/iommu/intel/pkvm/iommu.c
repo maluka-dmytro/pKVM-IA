@@ -458,6 +458,9 @@ static int pkvm_handle_iommu_hypercall(void *in, void *out)
 	case pasid_setup_sl:
 		ret = pkvm_iommu_pasid_setup_sl(&data_in->pasid_setup_sl);
 		break;
+	case pasid_teardown:
+		ret = pkvm_iommu_pasid_teardown(&data_in->pasid_teardown);
+		break;
 	default:
 		pkvm_err("Invalid hypercall: %d\n", data_in->hc_num);
 		ret = -EINVAL;

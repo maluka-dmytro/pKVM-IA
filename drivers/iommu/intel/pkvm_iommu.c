@@ -317,3 +317,21 @@ int pv_pasid_setup_sl(struct device_domain_info *info, phys_addr_t ssptptr,
 
 	return ret;
 }
+
+int pv_pasid_teardown(struct device_domain_info *info, u32 pasid)
+{
+	union pkvm_hc_data d = { 0 };
+	struct iommu_hc_data *data = (struct iommu_hc_data *)&d;
+	struct intel_iommu *iommu = info->iommu;
+
+	data->pasid_teardown.phys = iommu->reg_phys;
+	data->pasid_teardown.pasid = pasid;
+	data->pasid_teardown.bus = info->bus;
+	data->pasid_teardown.devfn = info->devfn;
+	data->pasid_teardown.ats_qdep = info->ats_qdep;
+	data->pasid_teardown.ats_enabled = info->ats_enabled;
+	data->pasid_teardown.ats_supported = info->ats_supported;
+	data->hc_num = pasid_teardown;
+
+	return pkvm_hypercall_inout(iommu_hypercall, &d, &d);
+}

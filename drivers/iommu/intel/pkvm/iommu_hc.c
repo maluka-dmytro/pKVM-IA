@@ -375,3 +375,46 @@ int pkvm_iommu_pasid_setup_sl(struct pasid_setup_sl_data *data)
 						data->did, data->old_did,
 						data->pasid);
 }
+
+int pkvm_iommu_pasid_teardown(struct pasid_teardown_data *data)
+{
+	struct intel_iommu *iommu = iommu_from_phys(data->phys);
+	u16 bdf = PCI_DEVID(data->bus, data->devfn);
+	struct device_domain_info info = { 0 };
+	struct dev_iommu dev_iommu = { 0 };
+	struct pasid_table table = { 0 };
+	struct device dev = { 0 };
+	int ret;
+
+	if (!iommu)
+		return -EINVAL;
+
+	if (data->ats_qdep > PCI_ATS_MAX_QDEP)
+		return -EINVAL;
+
+	if (is_dev_in_satc(bdf)) {
+		if (ecap_dit(iommu->ecap))
+			info.pfsid = bdf;
+	} else if (data->ats_supported || data->ats_enabled) {
+		return -EPERM;
+	}
+
+	ret = __get_pasid_table(iommu, data->bus, data->devfn, &table);
+	if (ret)
+		return ret;
+
+	info.bus = data->bus;
+	info.devfn = data->devfn;
+	info.ats_qdep = data->ats_qdep;
+	info.ats_enabled = data->ats_enabled;
+	info.ats_supported = data->ats_supported;
+	info.pasid_table = &table;
+	info.iommu = iommu;
+	dev_iommu.priv = (void *)&info;
+	dev.iommu = &dev_iommu;
+
+	pkvm_dbg("%s: dev[%x:%x], pasid: %x, ats_qdep: %d\n", __func__,
+		 data->bus, data->devfn, data->pasid, data->ats_qdep);
+	intel_pasid_tear_down_entry(iommu, &dev, data->pasid, false);
+	return 0;
+}
