@@ -450,6 +450,7 @@ int pkvm_iommu_alloc_domain(struct alloc_domain_data *data)
 	struct intel_iommu *iommu;
 	void *pgd;
 	int ret;
+	bool need_iotlb_sync_map;
 
 	iommu = iommu_from_phys(data->phys);
 	ret = __validate_domain_params(iommu, data);
@@ -467,7 +468,8 @@ int pkvm_iommu_alloc_domain(struct alloc_domain_data *data)
 
 	__iommu_flush_cache(iommu, pgd, VTD_PAGE_SIZE);
 
-	domain = pkvm_alloc_iommu_domain(data);
+	need_iotlb_sync_map = cap_caching_mode(iommu->cap) && !data->use_first_level;
+	domain = pkvm_alloc_iommu_domain(data, need_iotlb_sync_map);
 	if (IS_ERR(domain)) {
 		pkvm_err("%s: domain alloc failed for device[%x] (err=%ld)\n",
 			 __func__, data->bdf, PTR_ERR(domain));

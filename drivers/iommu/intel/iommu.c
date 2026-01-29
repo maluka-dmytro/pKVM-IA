@@ -1826,6 +1826,11 @@ int domain_map(struct dmar_domain *domain, unsigned long iov_pfn,
 		}
 	}
 
+#ifdef __PKVM_HYP__
+	if (domain->iotlb_sync_map)
+		cache_tag_flush_range_np(domain, iov_pfn << VTD_PAGE_SHIFT,
+					 (iov_pfn + nr_pages - 1) << VTD_PAGE_SHIFT);
+#endif
 	return 0;
 }
 
