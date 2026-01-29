@@ -211,3 +211,83 @@ int pkvm_iommu_set_sm_ce(struct set_sm_ce_data *data)
 				     pasid_dir_size(data->max_pasid), false);
 	return ret;
 }
+
+static int __get_pasid_table(struct intel_iommu *iommu, u8 bus, u8 devfn, struct pasid_table *table)
+{
+	struct context_entry *context = iommu_context_addr(iommu, bus, devfn, false);
+	u32 pds;
+
+	if (!context || !context_present(context)) {
+		pkvm_err("%s: pasid directory table not found: device[%x:%x]\n",
+			 __func__, bus, devfn);
+		return -EINVAL;
+	}
+
+	pds = get_pasid_dir_size(context);
+	table->table = __pkvm_va(context->lo & VTD_PAGE_MASK);
+	table->max_pasid = pds << PASID_PDE_SHIFT;
+
+	return 0;
+}
+
+int pkvm_iommu_pasid_setup_fl(struct pasid_setup_fl_data *data)
+{
+	struct intel_iommu *iommu = iommu_from_phys(data->phys);
+	u16 bdf = PCI_DEVID(data->bus, data->devfn);
+	struct device_domain_info info = { 0 };
+	struct dev_iommu dev_iommu = { 0 };
+	struct pasid_table table = { 0 };
+	struct device dev = { 0 };
+	u64 fsptptr;
+	int ret;
+
+	if (!iommu)
+		return -EINVAL;
+
+	if (data->ats_qdep > PCI_ATS_MAX_QDEP)
+		return -EINVAL;
+
+	if (is_dev_in_satc(bdf)) {
+		if (ecap_dit(iommu->ecap))
+			info.pfsid = bdf;
+	} else if (data->ats_supported || data->ats_enabled) {
+		return -EPERM;
+	}
+
+	ret = __get_pasid_table(iommu, data->bus, data->devfn, &table);
+	if (ret)
+		return ret;
+
+	if (__pkvm_pa(table.table) != pkvm_host_gpa_to_phys(data->pasid_dir_gpa)) {
+		pkvm_err("%s: pasid dir address mismatch(%lx != %llx)\n",
+			 __func__, __pkvm_pa(table.table),
+			 pkvm_host_gpa_to_phys(data->pasid_dir_gpa));
+		table.table = pkvm_host_gpa_to_virt(data->pasid_dir_gpa);
+	}
+
+	fsptptr = pkvm_host_gpa_to_phys(data->fsptptr_gpa);
+	info.bus = data->bus;
+	info.devfn = data->devfn;
+	info.ats_qdep = data->ats_qdep;
+	info.ats_enabled = data->ats_enabled;
+	info.ats_supported = data->ats_supported;
+	info.pasid_table = &table;
+	info.iommu = iommu;
+	dev_iommu.priv = (void *)&info;
+	dev.iommu = &dev_iommu;
+
+	ret = accept_ts_page_donation(iommu, &data->ts_page_gpa);
+	if (ret)
+		return ret;
+
+	pkvm_dbg("%s: dev[%x:%x], pasid: %x, fsptptr_gpa: %llx, did: %d, old_did: %d\n", __func__,
+		 data->bus, data->devfn, data->pasid, data->fsptptr_gpa, data->did, data->old_did);
+	if (!data->old_did) {
+		return intel_pasid_setup_first_level(iommu, &dev, fsptptr,
+						     data->pasid, data->did,
+						     data->flags);
+	}
+	return intel_pasid_replace_first_level(iommu, &dev, fsptptr,
+					       data->pasid, data->did,
+					       data->old_did, data->flags);
+}
