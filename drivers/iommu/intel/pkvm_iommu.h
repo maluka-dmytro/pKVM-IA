@@ -128,6 +128,9 @@ bool overlaps_iommu_mmio(unsigned long phys, unsigned long size);
 bool is_dev_in_satc(u16 bdf);
 bool pkvm_iommu_paging_structure_coherency(void);
 
+struct cache_tag *pkvm_alloc_cache_tag(void);
+void pkvm_free_cache_tag(struct cache_tag *cache_tag);
+
 /*
  * Get the page donated by host for constructing
  * translation structures(context/pasid).
