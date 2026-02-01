@@ -51,9 +51,14 @@ extern u64 __pkvm_vmemmap;
 
 /* Caution: __st is evaluated twice. */
 #define for_each_pkvm_page(__p, __st, __sz)						\
-	for (struct pkvm_page *__p = pkvm_phys_to_page(PAGE_ALIGN_DOWN(__st)),		\
+	for (struct pkvm_page *__p = pkvm_phys_to_page(PAGE_ALIGN_DOWN((__st))),	\
 			      *__e = pkvm_phys_to_page(PAGE_ALIGN((__st) + (__sz)));	\
 	     __p < __e; __p++)
+
+#define for_each_pkvm_page_safe(__p, __st, __sz)					\
+	for (u64 __c = PAGE_ALIGN_DOWN((__st)), __e = PAGE_ALIGN((__st) + (__sz));	\
+	     __c < __e; __c += PAGE_SIZE)						\
+		if (is_memory_range(__c, PAGE_SIZE) && ((__p) = pkvm_phys_to_page(__c)))
 
 /*
  * Refcounting for 'struct pkvm_page'.
