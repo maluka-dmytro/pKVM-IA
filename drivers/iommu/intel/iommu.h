@@ -1154,6 +1154,11 @@ static inline int context_domain_id(struct context_entry *c)
 	return((c->hi >> 8) & 0xffff);
 }
 
+static inline unsigned long context_get_address_root(struct context_entry *ce)
+{
+	return READ_ONCE(ce->lo) & VTD_PAGE_MASK;
+}
+
 static inline void context_clear_entry(struct context_entry *context)
 {
 	context->lo = 0;

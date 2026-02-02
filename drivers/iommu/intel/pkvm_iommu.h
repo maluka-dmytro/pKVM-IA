@@ -131,6 +131,11 @@ bool pkvm_iommu_paging_structure_coherency(void);
 struct cache_tag *pkvm_alloc_cache_tag(void);
 void pkvm_free_cache_tag(struct cache_tag *cache_tag);
 
+int pkvm_acquire_domain_cache_tag_assign(void *pgd, int did, u32 pasid,
+					 struct device_domain_info *info);
+void pkvm_release_domain_cache_tag_unassign(void *pgd, int did, u32 pasid,
+					    struct device_domain_info *info);
+
 /*
  * Get the page donated by host for constructing
  * translation structures(context/pasid).

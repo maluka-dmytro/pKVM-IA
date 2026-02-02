@@ -262,6 +262,9 @@ void intel_pasid_tear_down_entry(struct intel_iommu *iommu, struct device *dev,
 {
 	struct pasid_entry *pte;
 	u16 did, pgtt;
+#ifdef __PKVM_HYP__
+	void *pgd = NULL;
+#endif
 
 #ifndef __PKVM_HYP__
 	if (pkvm_enabled()) {
@@ -311,6 +314,12 @@ void intel_pasid_tear_down_entry(struct intel_iommu *iommu, struct device *dev,
 
 	did = pasid_get_domain_id(pte);
 	pgtt = pasid_pte_get_pgtt(pte);
+#ifdef __PKVM_HYP__
+	if (pgtt == PASID_ENTRY_PGTT_FL_ONLY)
+		pgd = __pkvm_va(pasid_get_flptr(pte));
+	else if (pgtt == PASID_ENTRY_PGTT_SL_ONLY)
+		pgd = __pkvm_va(pasid_get_slptr(pte));
+#endif
 	intel_pasid_clear_entry(dev, pasid, fault_ignore);
 	iommu_unlock(iommu);
 
@@ -328,6 +337,9 @@ void intel_pasid_tear_down_entry(struct intel_iommu *iommu, struct device *dev,
 #ifndef __PKVM_HYP__
 	if (!fault_ignore)
 		intel_iommu_drain_pasid_prq(dev, pasid);
+#else
+	pkvm_release_domain_cache_tag_unassign(pgd, did, pasid,
+					       dev_iommu_priv_get(dev));
 #endif
 }
 
@@ -421,6 +433,7 @@ int intel_pasid_setup_first_level(struct intel_iommu *iommu, struct device *dev,
 				  int flags)
 {
 	struct pasid_entry *pte;
+	int ret;
 
 	if (!ecap_flts(iommu->ecap)) {
 		pr_err("No first level translation support on iommu%d\n",
@@ -437,7 +450,6 @@ int intel_pasid_setup_first_level(struct intel_iommu *iommu, struct device *dev,
 #ifndef __PKVM_HYP__
 	if (pkvm_enabled()) {
 		struct device_domain_info *info = dev_iommu_priv_get(dev);
-		int ret;
 
 		if (!info || !info->pasid_table)
 			return -ENODEV;
@@ -463,6 +475,15 @@ int intel_pasid_setup_first_level(struct intel_iommu *iommu, struct device *dev,
 		return -EBUSY;
 	}
 
+#ifdef __PKVM_HYP__
+	ret = pkvm_acquire_domain_cache_tag_assign(__pkvm_va(fsptptr), did,
+						   pasid, dev_iommu_priv_get(dev));
+	if (ret) {
+		pr_err("iommu%d: failed to get the domain for did: %d, fsptptr: %llx\n",
+		       iommu->seq_id, did, fsptptr);
+		return ret;
+	}
+#endif
 	pasid_pte_config_first_level(iommu, pte, fsptptr, did, flags);
 
 	iommu_unlock(iommu);
@@ -478,6 +499,11 @@ int intel_pasid_replace_first_level(struct intel_iommu *iommu,
 				    int flags)
 {
 	struct pasid_entry *pte, new_pte;
+#ifdef __PKVM_HYP__
+	void *old_pgd;
+	int pgtt;
+#endif
+	int ret;
 
 	if (!ecap_flts(iommu->ecap)) {
 		pr_err("No first level translation support on iommu%d\n",
@@ -494,7 +520,6 @@ int intel_pasid_replace_first_level(struct intel_iommu *iommu,
 #ifndef __PKVM_HYP__
 	if (pkvm_enabled()) {
 		struct device_domain_info *info = dev_iommu_priv_get(dev);
-		int ret;
 
 		if (!info || !info->pasid_table)
 			return -ENODEV;
@@ -522,7 +547,27 @@ int intel_pasid_replace_first_level(struct intel_iommu *iommu,
 		return -EINVAL;
 	}
 
+
+#ifdef __PKVM_HYP__
+	if (WARN_ON(old_did != pasid_get_domain_id(pte)))
+		return -EINVAL;
+
+	pgtt = pasid_pte_get_pgtt(pte);
+	if (pgtt == PASID_ENTRY_PGTT_FL_ONLY)
+		old_pgd = __pkvm_va(pasid_get_flptr(pte));
+	else if (pgtt == PASID_ENTRY_PGTT_SL_ONLY)
+		old_pgd = __pkvm_va(pasid_get_slptr(pte));
+
+	ret = pkvm_acquire_domain_cache_tag_assign(__pkvm_va(fsptptr), did,
+						   pasid, dev_iommu_priv_get(dev));
+	if (ret) {
+		pr_err("iommu%d: failed to get the domain for did: %d, fsptptr: %llx\n",
+		       iommu->seq_id, did, fsptptr);
+		return ret;
+	}
+#else
 	WARN_ON(old_did != pasid_get_domain_id(pte));
+#endif
 
 	*pte = new_pte;
 	iommu_unlock(iommu);
@@ -530,6 +575,9 @@ int intel_pasid_replace_first_level(struct intel_iommu *iommu,
 	intel_pasid_flush_present(iommu, dev, pasid, old_did, pte);
 #ifndef __PKVM_HYP__
 	intel_iommu_drain_pasid_prq(dev, pasid);
+#else
+	pkvm_release_domain_cache_tag_unassign(old_pgd, old_did,
+					       pasid, dev_iommu_priv_get(dev));
 #endif
 
 	return 0;
@@ -574,6 +622,7 @@ int intel_pasid_setup_second_level(struct intel_iommu *iommu,
 #ifndef __PKVM_HYP__
 	u16 did;
 #endif
+	int ret;
 
 	/*
 	 * If hardware advertises no support for second level
@@ -594,7 +643,6 @@ int intel_pasid_setup_second_level(struct intel_iommu *iommu,
 #ifndef __PKVM_HYP__
 	if (pkvm_enabled()) {
 		struct device_domain_info *info = dev_iommu_priv_get(dev);
-		int ret;
 
 		if (!info || !info->pasid_table)
 			return -ENODEV;
@@ -621,6 +669,12 @@ int intel_pasid_setup_second_level(struct intel_iommu *iommu,
 		return -EBUSY;
 	}
 
+#ifdef __PKVM_HYP__
+	ret = pkvm_acquire_domain_cache_tag_assign(domain->pgd, did, pasid,
+						   dev_iommu_priv_get(dev));
+	if (ret)
+		return ret;
+#endif
 	pasid_pte_config_second_level(iommu, pte, pgd_val, domain->agaw,
 				      did, domain->dirty_tracking);
 	iommu_unlock(iommu);
@@ -644,7 +698,11 @@ int intel_pasid_replace_second_level(struct intel_iommu *iommu,
 	u64 pgd_val;
 #ifndef __PKVM_HYP__
 	u16 did;
+#else
+	void *old_pgd;
+	int pgtt;
 #endif
+	int ret;
 
 	/*
 	 * If hardware advertises no support for second level
@@ -665,7 +723,6 @@ int intel_pasid_replace_second_level(struct intel_iommu *iommu,
 #ifndef __PKVM_HYP__
 	if (pkvm_enabled()) {
 		struct device_domain_info *info = dev_iommu_priv_get(dev);
-		int ret;
 
 		if (!info || !info->pasid_table)
 			return -ENODEV;
@@ -696,7 +753,27 @@ int intel_pasid_replace_second_level(struct intel_iommu *iommu,
 		return -EINVAL;
 	}
 
+
+#ifdef __PKVM_HYP__
+	if (WARN_ON(old_did != pasid_get_domain_id(pte)))
+		return -EINVAL;
+
+	pgtt = pasid_pte_get_pgtt(pte);
+	if (pgtt == PASID_ENTRY_PGTT_FL_ONLY)
+		old_pgd = __pkvm_va(pasid_get_flptr(pte));
+	else if (pgtt == PASID_ENTRY_PGTT_SL_ONLY)
+		old_pgd = __pkvm_va(pasid_get_slptr(pte));
+
+	ret = pkvm_acquire_domain_cache_tag_assign(domain->pgd, did, pasid,
+						   dev_iommu_priv_get(dev));
+	if (ret) {
+		pr_err("iommu%d: failed to get the domain for did: %d, pgd: %p\n",
+		       iommu->seq_id, did, domain->pgd);
+		return ret;
+	}
+#else
 	WARN_ON(old_did != pasid_get_domain_id(pte));
+#endif
 
 	*pte = new_pte;
 	iommu_unlock(iommu);
@@ -704,6 +781,9 @@ int intel_pasid_replace_second_level(struct intel_iommu *iommu,
 	intel_pasid_flush_present(iommu, dev, pasid, old_did, pte);
 #ifndef __PKVM_HYP__
 	intel_iommu_drain_pasid_prq(dev, pasid);
+#else
+	pkvm_release_domain_cache_tag_unassign(old_pgd, old_did,
+					       pasid, dev_iommu_priv_get(dev));
 #endif
 
 	return 0;
