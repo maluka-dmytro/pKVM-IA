@@ -15,7 +15,7 @@
 #include "../pasid.h"
 #include "iommu_domain.h"
 
-int pkvm_iommu_qi_submit(struct qi_submit_data *data)
+int pkvm_iommu_iec_flush(struct iec_flush_data *data)
 {
 	struct intel_iommu *iommu = iommu_from_phys(data->phys);
 
@@ -24,8 +24,13 @@ int pkvm_iommu_qi_submit(struct qi_submit_data *data)
 
 	BUG_ON(!iommu->qi);
 
-	return qi_submit_sync(iommu, pkvm_host_gpa_to_virt(data->desc_gpa),
-			      data->count, data->options);
+	if (data->global) {
+		qi_global_iec(iommu);
+		return 0;
+	}
+
+	return qi_flush_iec(iommu, data->index, data->mask);
+
 }
 
 int pkvm_iommu_clear_ce(struct clear_ce_data *data)

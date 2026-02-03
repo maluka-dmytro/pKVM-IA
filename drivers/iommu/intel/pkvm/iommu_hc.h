@@ -9,7 +9,7 @@
 #include <asm/kvm_pkvm.h>
 
 enum iommu_hc_num {
-	qi_submit,
+	iec_flush,
 	clear_ce,
 	set_lm_ce,
 	set_sm_ce,
@@ -20,11 +20,11 @@ enum iommu_hc_num {
 	free_domain,
 };
 
-struct qi_submit_data {
+struct iec_flush_data {
 	u64 phys;
-	u64 desc_gpa;
-	u32 options;
-	u32 count;
+	bool global;
+	u64 index;
+	u64 mask;
 };
 
 struct clear_ce_data {
@@ -124,7 +124,7 @@ struct free_domain_data {
 
 struct iommu_hc_data {
 	union {
-		struct qi_submit_data qi_submit;
+		struct iec_flush_data iec_flush;
 		struct clear_ce_data clear_ce;
 		struct set_lm_ce_data set_lm_ce;
 		struct set_sm_ce_data set_sm_ce;
@@ -138,7 +138,7 @@ struct iommu_hc_data {
 };
 static_assert(sizeof(struct iommu_hc_data) <= PKVM_HC_DATA_MAX_NUM * sizeof(u64));
 
-int pkvm_iommu_qi_submit(struct qi_submit_data *data);
+int pkvm_iommu_iec_flush(struct iec_flush_data *data);
 int pkvm_iommu_clear_ce(struct clear_ce_data *data);
 int pkvm_iommu_set_lm_ce(struct set_lm_ce_data *data);
 int pkvm_iommu_set_sm_ce(struct set_sm_ce_data *data);

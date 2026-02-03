@@ -109,28 +109,17 @@ int __init pkvm_host_init_iommu(void)
 	return intel_iommu_init();
 }
 
-int pv_qi_submit_sync(struct intel_iommu *iommu, struct qi_desc *desc,
-		      unsigned int count, unsigned long options)
+int pv_iec_flush(struct intel_iommu *iommu, bool global, int index, int mask)
 {
 	union pkvm_hc_data d = { 0 };
 	struct iommu_hc_data *data = (struct iommu_hc_data *)&d;
-	struct qi_desc *desc_ptr;
-	int ret;
 
-	desc_ptr = kcalloc(count, sizeof(struct qi_desc), GFP_ATOMIC);
-	if (!desc_ptr)
-		return -ENOMEM;
-
-	memcpy(desc_ptr, desc, count * sizeof(struct qi_desc));
-	data->qi_submit.desc_gpa = virt_to_phys(desc_ptr);
-	data->qi_submit.phys = iommu->reg_phys;
-	data->qi_submit.count = count;
-	data->qi_submit.options = options;
-	data->hc_num = qi_submit;
-
-	ret = pkvm_hypercall_inout(iommu_hypercall, &d, &d);
-	kfree(desc_ptr);
-	return ret;
+	data->iec_flush.phys = iommu->reg_phys;
+	data->iec_flush.global = global;
+	data->iec_flush.index = index;
+	data->iec_flush.mask = mask;
+	data->hc_num = iec_flush;
+	return pkvm_hypercall_inout(iommu_hypercall, &d, &d);
 }
 
 int pv_context_clear(u64 phys, u8 bus, u8 devfn, struct device_domain_info *info)

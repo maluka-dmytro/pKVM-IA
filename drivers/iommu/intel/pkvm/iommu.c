@@ -441,8 +441,8 @@ static int pkvm_handle_iommu_hypercall(void *in, void *out)
 	int ret;
 
 	switch (data_in->hc_num) {
-	case qi_submit:
-		ret = pkvm_iommu_qi_submit(&data_in->qi_submit);
+	case iec_flush:
+		ret = pkvm_iommu_iec_flush(&data_in->iec_flush);
 		break;
 	case clear_ce:
 		ret = pkvm_iommu_clear_ce(&data_in->clear_ce);

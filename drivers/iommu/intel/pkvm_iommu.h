@@ -91,8 +91,7 @@ int __init pkvm_scan_satc_devs(u16 satc_devs[], int *nr_satc_devs, int max_satc_
 int __init pkvm_host_prepare_iommu(void);
 int __init pkvm_host_init_iommu(void);
 
-int pv_qi_submit_sync(struct intel_iommu *iommu, struct qi_desc *desc,
-		      unsigned int count, unsigned long options);
+int pv_iec_flush(struct intel_iommu *iommu, bool global, int index, int mask);
 int pv_context_clear(u64 phys, u8 bus, u8 devfn, struct device_domain_info *info);
 int pv_context_mapping(struct intel_iommu *iommu, struct device_domain_info *info,
 		       u8 bus, u8 devfn, u64 pgd_gpa, u16 did, u8 agaw);
@@ -171,9 +170,8 @@ void pkvm_release_domain_cache_tag_unassign(void *pgd, int did, u32 pasid,
 int pkvm_intel_iommu_init(void);
 #endif /* !__PKVM_HYP__ */
 #else /* !CONFIG_PKVM_INTEL */
-static inline int pv_qi_submit_sync(struct intel_iommu *iommu,
-				    struct qi_desc *desc, unsigned int count,
-				    unsigned long options)
+static inline int pv_iec_flush(struct intel_iommu *iommu, bool global,
+			int index, int mask)
 {
 	return -EOPNOTSUPP;
 }
