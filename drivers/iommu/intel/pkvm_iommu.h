@@ -133,6 +133,7 @@ bool pkvm_iommu_paging_structure_coherency(void);
 
 struct cache_tag *pkvm_alloc_cache_tag(void);
 void pkvm_free_cache_tag(struct cache_tag *cache_tag);
+void pkvm_iommu_pt_flush(unsigned long vaddr, unsigned long size);
 
 int pkvm_acquire_domain_cache_tag_assign(void *pgd, int did, u32 pasid,
 					 struct device_domain_info *info);

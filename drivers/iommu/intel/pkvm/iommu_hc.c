@@ -112,6 +112,10 @@ int pkvm_iommu_set_lm_ce(struct set_lm_ce_data *data)
 	info.bus = data->bus;
 	info.devfn = data->devfn;
 	info.iommu = iommu;
+	info.ats_qdep = data->ats_qdep;
+	info.ats_supported = data->ats_supported;
+	info.ats_enabled = data->ats_enabled;
+
 	if (data->did == FLPT_DEFAULT_DID) {
 		/*
 		 * Passthrough will break pkvm security guarantees as
@@ -122,18 +126,12 @@ int pkvm_iommu_set_lm_ce(struct set_lm_ce_data *data)
 		 */
 		domain.pgd = __pkvm_va(pkvm_host_ept_root());
 		domain.agaw = level_to_agaw(pkvm_host_ept_level());
-		info.ats_qdep = 0;
-		info.ats_supported = 0;
-		info.ats_enabled = 0;
 	} else {
 		if (data->agaw != iommu->agaw)
 			return -EINVAL;
 
 		domain.pgd = pkvm_host_gpa_to_virt(data->pgd_gpa);
 		domain.agaw = data->agaw;
-		info.ats_qdep = data->ats_qdep;
-		info.ats_supported = data->ats_supported;
-		info.ats_enabled = data->ats_enabled;
 	}
 
 	ret = accept_ts_page_donation(iommu, &data->ts_page_gpa);
@@ -334,6 +332,9 @@ int pkvm_iommu_pasid_setup_sl(struct pasid_setup_sl_data *data)
 	info.iommu = iommu;
 	dev_iommu.priv = (void *)&info;
 	dev.iommu = &dev_iommu;
+	info.ats_qdep = data->ats_qdep;
+	info.ats_supported = data->ats_supported;
+	info.ats_enabled = data->ats_enabled;
 
 	if (data->did == FLPT_DEFAULT_DID) {
 		/*
@@ -348,18 +349,12 @@ int pkvm_iommu_pasid_setup_sl(struct pasid_setup_sl_data *data)
 
 		domain.pgd = __pkvm_va(pkvm_host_ept_root());
 		domain.agaw = level_to_agaw(pkvm_host_ept_level());
-		info.ats_qdep = 0;
-		info.ats_supported = 0;
-		info.ats_enabled = 0;
 	} else {
 		if (data->agaw != iommu->agaw)
 			return -EINVAL;
 
 		domain.pgd = pkvm_host_gpa_to_virt(data->ssptptr_gpa);
 		domain.agaw = iommu->agaw;
-		info.ats_qdep = data->ats_qdep;
-		info.ats_supported = data->ats_supported;
-		info.ats_enabled = data->ats_enabled;
 	}
 
 	ret = accept_ts_page_donation(iommu, &data->ts_page_gpa);
