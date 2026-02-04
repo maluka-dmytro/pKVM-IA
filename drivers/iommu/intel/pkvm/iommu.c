@@ -33,6 +33,12 @@ int nr_satc_devs;
 #define PKVM_MAX_IOMMU_NUM	16
 static struct intel_iommu iommus[PKVM_MAX_IOMMU_NUM];
 static int nr_iommus;
+static bool iommu_paging_structure_coherent = true;
+
+bool pkvm_iommu_paging_structure_coherency(void)
+{
+	return iommu_paging_structure_coherent;
+}
 
 bool is_dev_in_satc(u16 bdf)
 {
@@ -458,6 +464,10 @@ int __init prepare_iommu(struct intel_iommu_info *info)
 	iommu->agaw = info->agaw;
 	iommu->msagaw = info->msagaw;
 	iommu->seq_id = info->seq_id;
+
+	if (iommu_paging_structure_coherent &&
+	    !iommu_paging_structure_coherency(iommu))
+		iommu_paging_structure_coherent = false;
 
 	return 0;
 }
