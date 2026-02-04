@@ -160,6 +160,8 @@ static int ept_pte_count(int level)
 static void ept_pte_set(void *ptep, u64 spte)
 {
 	WRITE_ONCE(*(u64 *)ptep, spte);
+	if (!pkvm_iommu_paging_structure_coherency())
+		clflush_cache_range(ptep, sizeof(u64));
 }
 
 static u64 ept_pte_get(void *ptep)
