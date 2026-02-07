@@ -92,6 +92,8 @@ PKVM_HC(vm_mmu_age)
 /* IOMMU hypercalls */
 PKVM_HC_OUT(iommu_mmio_read)
 PKVM_HC(iommu_mmio_write)
+PKVM_HC_INOUT(iommu_domain_map)
+PKVM_HC(iommu_domain_unmap)
 PKVM_HC_INOUT(iommu_hypercall)
 
 #undef PKVM_HC

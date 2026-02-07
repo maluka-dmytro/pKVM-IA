@@ -52,6 +52,15 @@ struct pkvm_mem_info {
 	u64 prot;
 };
 
+struct domain_map_data {
+	u64 pgd_gpa;
+	u64 iov_pfn;
+	u64 phys_pfn;
+	u64 nr_pages;
+	u64 prot;
+	struct pkvm_memcache mc;
+};
+
 struct pkvm_iommu_ops {
 	/*
 	 * Common callbacks for all vendors implementations.
@@ -64,8 +73,9 @@ struct pkvm_iommu_ops {
 	 */
 	int (*mmio_read)(u64 phys, int len, u64 *val);
 	int (*mmio_write)(u64 phys, int len, u64 val);
-	/* TODO: domain_map() */
-	/* TODO: domain_unmap() */
+
+	int (*domain_map)(struct domain_map_data *in, struct domain_map_data *out);
+	int (*domain_unmap)(u64 pgd_gpa, u64 start_pfn, u64 last_pfn);
 
 	/*
 	 * Vendor specific hypercall handler, that abstracts the
@@ -154,6 +164,10 @@ union pkvm_hc_data {
 	struct {
 		u64 val;
 	} iommu_mmio_read;
+	union {
+		struct domain_map_data in;
+		struct domain_map_data out;
+	} iommu_domain_map;
 	/*
 	 * Use the maximum supported size for iommu hypercall
 	 * Vendor specific iommu hypercall arguments are not
