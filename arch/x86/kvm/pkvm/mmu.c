@@ -288,52 +288,6 @@ static int check_page_owner_and_state(struct pkvm_pgtable *pgt, unsigned long va
 	return pkvm_pgtable_walk(pgt, vaddr, size, &walker);
 }
 
-static int check_page_ownership_mapped_walker(struct pkvm_pgtable_visit_ctx *ctx,
-					      unsigned long walk_flags,
-					      void *const arg)
-{
-	struct pkvm_pgtable *pgt = ctx->pgt;
-	enum pkvm_page_state pgstate;
-	void *ptep = ctx->ptep;
-
-	if (!pgt->pgt_ops->pte_present(ptep))
-		return -EPERM;
-
-	pgstate = pkvm_pte_pgstate(pgt, ptep);
-	if (pgstate != PKVM_PAGE_NONE && pgstate != PKVM_PAGE_OWNED)
-		return -EPERM;
-
-	return 0;
-}
-
-/*
- * Check if the range[vaddr, vaddr + size) is owned by the host and mapped in
- * host mmu. If the range contains MMIO space, PKVM_PAGE_OWNED guarantees the
- * page ownership. But if the range is system memory, the page state could be
- * PKVM_PAGE_NONE and we would need to check the pkvm_page to see the real
- * ownership status.
- */
-static bool is_host_owned_and_mapped(struct pkvm_pgtable *pgt,
-				     unsigned long vaddr, unsigned long size)
-{
-	struct pkvm_pgtable_walker walker = {
-		.cb = check_page_ownership_mapped_walker,
-		.arg = NULL,
-		.walk_flags = PKVM_PGTABLE_WALK_LEAF,
-	};
-	struct pkvm_page *page;
-
-	if (pkvm_pgtable_walk(pgt, vaddr, size, &walker))
-		return false;
-
-	for_each_pkvm_page_safe(page, vaddr, size) {
-		if (page->host_state != PKVM_PAGE_OWNED)
-			return false;
-	}
-
-	return true;
-}
-
 static u64 host_mmu_pte_prot(bool write, bool mmio)
 {
 	return host_mmu.pgt_ops->calc_pte_perm(true, write, true) |
@@ -1721,64 +1675,4 @@ unlock:
 	pkvm_host_mmu_unlock();
 
 	return ret;
-}
-
-/**
- * pkvm_host_use_dma() - Pin the pages to be used for DMA.
- *
- * @phys:	Starting physical address of the memory range to be used for DMA.
- * @size:	Size of the memory range.
- *
- * Pin the range of pages [phys, phys + size) that is to be mapped for DMA. Pinning
- * is to disallow host from donating the pages mapped for DMA. Before pinning,
- * validate that the memory range is owned by the host.
- */
-int pkvm_host_use_dma(unsigned long phys, unsigned long size)
-{
-	struct pkvm_page *page;
-	int ret = 0;
-
-	if (!PAGE_ALIGNED(phys) || !PAGE_ALIGNED(size) || size == 0)
-		return -EINVAL;
-
-	pkvm_host_mmu_lock();
-
-	/* The vaddr == phys for the host MMU */
-	if (!is_host_owned_and_mapped(&host_mmu, phys, size)) {
-		ret = -EPERM;
-		goto unlock;
-	}
-
-	for_each_pkvm_page_safe(page, phys, size)
-		pkvm_page_ref_inc(page);
-
-unlock:
-	pkvm_host_mmu_unlock();
-	return ret;
-}
-
-/**
- * pkvm_unuse_dma() - Unpin the pages that was previously pinned for DMA.
- *
- * @phys:	Starting physical address of the memory range to be unpinned.
- * @size:	Size of the memory range.
- */
-void pkvm_host_unuse_dma(unsigned long phys, unsigned long size)
-{
-	struct pkvm_page *page;
-
-	if (!PAGE_ALIGNED(phys) || !PAGE_ALIGNED(size) || size == 0)
-		return;
-
-	pkvm_host_mmu_lock();
-
-	/* The vaddr == phys for the host MMU */
-	if (WARN_ON(!is_host_owned_and_mapped(&host_mmu, phys, size)))
-		goto unlock;
-
-	for_each_pkvm_page_safe(page, phys, size)
-		pkvm_page_ref_dec(page);
-
-unlock:
-	pkvm_host_mmu_unlock();
 }
