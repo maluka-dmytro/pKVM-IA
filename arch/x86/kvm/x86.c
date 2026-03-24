@@ -14917,6 +14917,7 @@ static int __pkvm_vcpu_enter_guest(struct kvm_vcpu *vcpu, bool force_immediate_e
 	u64 run_flags;
 	int ret;
 
+handle_events:
 	if (kvm_request_pending(vcpu)) {
 		if (kvm_check_request(KVM_REQ_TLB_FLUSH, vcpu))
 			kvm_vcpu_flush_tlb_all(vcpu);
@@ -14957,6 +14958,31 @@ static int __pkvm_vcpu_enter_guest(struct kvm_vcpu *vcpu, bool force_immediate_e
 	run_flags = 0;
 	if (req_immediate_exit)
 		run_flags |= KVM_RUN_FORCE_IMMEDIATE_EXIT;
+	else if (READ_ONCE(vcpu->mode) == EXITING_GUEST_MODE ||
+		 kvm_request_pending(vcpu)) {
+		/*
+		 * No need to cancel the previously injected events as the event
+		 * is injected via either handling exit reasons or the PV
+		 * interface which both happen on this CPU, thus there is no new
+		 * event injection request. And the vCPU run loop also doesn't
+		 * break out in this case, so no need to cancel.
+		 */
+		WRITE_ONCE(vcpu->mode, OUTSIDE_GUEST_MODE);
+		/*
+		 * Prevent the vcpu->mode writing from being reordered to
+		 * advertise the OUTSIDE_GUEST_MODE as early as possible for the
+		 * other CPUs to skip the unnecessary kicks. No need to use full
+		 * memory barrier like for IN_GUEST_MODE, although the pKVM will
+		 * read vcpu->requests to handle the pending requests. That is
+		 * because if reading vcpu->requests is re-ordered and results
+		 * in no pending request being handled, the pKVM will re-check
+		 * the vcpu->requests after the full memory barrier for setting
+		 * IN_GUEST_MODE, to guarantee any missed pending request can be
+		 * handled before vmenter.
+		 */
+		smp_wmb();
+		goto handle_events;
+	}
 
 	if (vcpu->arch.guest_fpu.xfd_err)
 		wrmsrl(MSR_IA32_XFD_ERR, vcpu->arch.guest_fpu.xfd_err);
