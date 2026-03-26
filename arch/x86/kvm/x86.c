@@ -14940,12 +14940,7 @@ handle_events:
 
 	kvm_x86_call(prepare_switch_to_guest)(vcpu);
 
-	/*
-	 * Make sure vcpu->mode is changed to IN_GUEST_MODE before
-	 * running to mark this vcpu should be kicked for any new
-	 * vcpu request.
-	 */
-	smp_store_mb(vcpu->mode, IN_GUEST_MODE);
+	pkvm_set_vcpu_in_guest_mode(vcpu);
 
 	if (enable_apicv && kvm_lapic_enabled(vcpu))
 		kvm_x86_call(sync_pir_to_irr)(vcpu);
@@ -14967,20 +14962,7 @@ handle_events:
 		 * event injection request. And the vCPU run loop also doesn't
 		 * break out in this case, so no need to cancel.
 		 */
-		WRITE_ONCE(vcpu->mode, OUTSIDE_GUEST_MODE);
-		/*
-		 * Prevent the vcpu->mode writing from being reordered to
-		 * advertise the OUTSIDE_GUEST_MODE as early as possible for the
-		 * other CPUs to skip the unnecessary kicks. No need to use full
-		 * memory barrier like for IN_GUEST_MODE, although the pKVM will
-		 * read vcpu->requests to handle the pending requests. That is
-		 * because if reading vcpu->requests is re-ordered and results
-		 * in no pending request being handled, the pKVM will re-check
-		 * the vcpu->requests after the full memory barrier for setting
-		 * IN_GUEST_MODE, to guarantee any missed pending request can be
-		 * handled before vmenter.
-		 */
-		smp_wmb();
+		pkvm_set_vcpu_outside_guest_mode(vcpu);
 		goto handle_events;
 	}
 
@@ -15010,12 +14992,7 @@ handle_events:
 		kvm_update_dr7(vcpu);
 	}
 
-	/*
-	 * Make sure vcpu->mode is changed to OUTSIDE_GUEST_MODE after
-	 * vmexit to mark this vcpu no need to be kicked for any new
-	 * vcpu request.
-	 */
-	smp_store_mb(vcpu->mode, OUTSIDE_GUEST_MODE);
+	pkvm_set_vcpu_outside_guest_mode(vcpu);
 
 	if (unlikely(exit_fastpath == EXIT_FASTPATH_REENTER_GUEST))
 		return 1;

@@ -141,6 +141,35 @@ static inline bool pkvm_vcpu_is_pvmfw_bsp(struct kvm_vcpu *vcpu)
 	return kvm_vcpu_is_reset_bsp(vcpu) && pkvm_vm_has_pvmfw(vcpu->kvm);
 }
 
+static inline void pkvm_set_vcpu_in_guest_mode(struct kvm_vcpu *vcpu)
+{
+	/*
+	 * Ensure that IN_GUEST_MODE is globally visible before any subsequent
+	 * loads of vcpu->requests (like those inside the run loop or if bump
+	 * back to handle_events). This pairs with the full barrier in
+	 * kvm_make_vcpus_request_mask().
+	 */
+	smp_store_mb(vcpu->mode, IN_GUEST_MODE);
+}
+
+static inline void pkvm_set_vcpu_outside_guest_mode(struct kvm_vcpu *vcpu)
+{
+	WRITE_ONCE(vcpu->mode, OUTSIDE_GUEST_MODE);
+	/*
+	 * Prevent the vcpu->mode writing from being reordered to
+	 * advertise the OUTSIDE_GUEST_MODE as early as possible for the
+	 * other CPUs to skip the unnecessary kicks. No need to use full
+	 * memory barrier like for IN_GUEST_MODE, although the pKVM will
+	 * read vcpu->requests to handle the pending requests. That is
+	 * because if reading vcpu->requests is re-ordered and results
+	 * in no pending request being handled, the pKVM will re-check
+	 * the vcpu->requests after the full memory barrier for setting
+	 * IN_GUEST_MODE, to guarantee any missed pending request can be
+	 * handled before vmenter.
+	 */
+	smp_wmb();
+}
+
 struct pkvm_x86_ops {
 	void (*update_vcpu_state_from_host)(struct kvm_vcpu *vcpu);
 	void (*share_vcpu_state_with_host)(struct kvm_vcpu *vcpu);
