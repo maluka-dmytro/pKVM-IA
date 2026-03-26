@@ -289,16 +289,6 @@ static void handle_pending_events(struct kvm_vcpu *vcpu, bool *req_immediate_exi
 		pkvm_flush_host_ept();
 }
 
-static inline void set_vcpu_mode(struct kvm_vcpu *vcpu, int mode)
-{
-	vcpu->mode = mode;
-	/*
-	 * Make sure vcpu->mode is set before checking/handling the pending
-	 * requests. Pairs with kvm_vcpu_exiting_guest_mode().
-	 */
-	smp_wmb();
-}
-
 void pkvm_host_vmexit_main(struct vcpu_vmx *vmx)
 {
 	struct kvm_vcpu *vcpu = &vmx->vcpu;
@@ -308,7 +298,7 @@ void pkvm_host_vmexit_main(struct vcpu_vmx *vmx)
 
 	pkvm_trace_vmexit_start(vcpu);
 
-	set_vcpu_mode(vcpu, OUTSIDE_GUEST_MODE);
+	pkvm_set_vcpu_outside_guest_mode(vcpu);
 
 	vcpu->arch.cr2 = native_read_cr2();
 	vcpu->arch.exception.injected = false;
@@ -374,17 +364,14 @@ void pkvm_host_vmexit_main(struct vcpu_vmx *vmx)
 handle_events:
 	handle_pending_events(vcpu, &req_immediate_exit);
 
-	/*
-	 * Once the pending events have been handled, set IN_GUEST_MODE to
-	 * indicate kick is required for the new pending events.
-	 */
-	set_vcpu_mode(vcpu, IN_GUEST_MODE);
+	pkvm_set_vcpu_in_guest_mode(vcpu);
 
 	if (req_immediate_exit) {
 		kvm_make_request(KVM_REQ_EVENT, vcpu);
 		request_host_immediate_exit(vmx);
 	} else if (READ_ONCE(vcpu->mode) == EXITING_GUEST_MODE ||
 		   kvm_request_pending(vcpu)) {
+		pkvm_set_vcpu_outside_guest_mode(vcpu);
 		/*
 		 * Some vcpu requests may be set after handle_pending_events()
 		 * but before set vcpu mode to IN_GUEST_MODE. In this case the
