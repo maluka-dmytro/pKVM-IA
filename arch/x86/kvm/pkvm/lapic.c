@@ -86,7 +86,11 @@ void pkvm_lapic_send_init(int cpu)
 
 	t1 = rdtsc();
 	while (atomic_read(per_cpu_ptr(&init_ack_count, cpu)) == prev_ack_count) {
-		ack_wait++;
+		if (++ack_wait >= 100000) {
+			pr_err_ratelimited("%s(cpu=%d): exceeded waiting for ack\n",
+					   __func__, cpu);
+			break;
+		}
 		cpu_relax();
 	}
 	t2 = rdtsc();
