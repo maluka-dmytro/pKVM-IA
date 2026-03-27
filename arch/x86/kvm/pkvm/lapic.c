@@ -49,6 +49,8 @@ void pkvm_lapic_send_init(int cpu)
 	u32 icrlow = APIC_INT_ASSERT | APIC_DM_INIT;
 	struct pkvm_lapic *local, *remote;
 	int prev_ack_count;
+	unsigned int ack_wait = 0;
+	u64 t1, t2;
 
 	/*
 	 * Check the CPU number to make sure only sending the INIT to other CPU
@@ -82,8 +84,15 @@ void pkvm_lapic_send_init(int cpu)
 
 	native_x2apic_icr_write(icrlow, remote->apic_id);
 
-	while (atomic_read(per_cpu_ptr(&init_ack_count, cpu)) == prev_ack_count)
+	t1 = rdtsc();
+	while (atomic_read(per_cpu_ptr(&init_ack_count, cpu)) == prev_ack_count) {
+		ack_wait++;
 		cpu_relax();
+	}
+	t2 = rdtsc();
+
+	pr_info_ratelimited("%s(cpu=%d): waited for ack %u times, %llu cycles\n",
+			    __func__, cpu, ack_wait, t2 - t1);
 }
 
 void pkvm_lapic_ack_init(void)
