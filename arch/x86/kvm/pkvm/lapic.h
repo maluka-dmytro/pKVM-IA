@@ -6,6 +6,7 @@
 
 int pkvm_lapic_init(void);
 void pkvm_lapic_send_init(int cpu);
+void pkvm_lapic_ack_init(void);
 int pkvm_lapic_msr_write(u32 msr, u64 val);
 
 #endif /* __PKVM_X86_LAPIC_H */

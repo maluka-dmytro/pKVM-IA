@@ -13,6 +13,7 @@ struct pkvm_lapic {
 };
 
 static DEFINE_PER_CPU(struct pkvm_lapic, pkvm_lapic);
+static DEFINE_PER_CPU(atomic_t, init_ack_count);
 
 static int setup_lapic(struct pkvm_lapic *lapic, u64 apicbase)
 {
@@ -47,6 +48,7 @@ void pkvm_lapic_send_init(int cpu)
 {
 	u32 icrlow = APIC_INT_ASSERT | APIC_DM_INIT;
 	struct pkvm_lapic *local, *remote;
+	int prev_ack_count;
 
 	/*
 	 * Check the CPU number to make sure only sending the INIT to other CPU
@@ -76,7 +78,17 @@ void pkvm_lapic_send_init(int cpu)
 	 */
 	BUG_ON(!local->ready);
 
+	prev_ack_count = atomic_read(per_cpu_ptr(&init_ack_count, cpu));
+
 	native_x2apic_icr_write(icrlow, remote->apic_id);
+
+	while (atomic_read(per_cpu_ptr(&init_ack_count, cpu)) == prev_ack_count)
+		cpu_relax();
+}
+
+void pkvm_lapic_ack_init(void)
+{
+	atomic_inc(this_cpu_ptr(&init_ack_count));
 }
 
 int pkvm_lapic_msr_write(u32 msr, u64 val)

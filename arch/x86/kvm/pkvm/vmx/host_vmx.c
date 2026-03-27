@@ -320,9 +320,10 @@ void pkvm_host_vmexit_main(struct vcpu_vmx *vmx)
 	case EXIT_REASON_INIT_SIGNAL:
 		/*
 		 * INIT is used as kick when making a request.
-		 * So just break the vmexits and go to pending
-		 * events handling.
+		 * So just inform the sender CPU that we received INIT
+		 * and go to pending events handling.
 		 */
+		pkvm_lapic_ack_init();
 		break;
 	case EXIT_REASON_INTERRUPT_WINDOW:
 		handle_irq_window(vcpu);

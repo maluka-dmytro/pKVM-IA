@@ -77,6 +77,7 @@
 #include "mem_protect.h"
 #include "memory.h"
 #include "pkvm.h"
+#include "pkvm/lapic.h"
 #include "pkvm/trace.h"
 #include "vmx/ept.h"
 
@@ -6765,8 +6766,10 @@ static int handle_init(struct kvm_vcpu *vcpu)
 	/*
 	 * EXIT_REASON_INIT_SIGNAL is caused by the pKVM hypervisor sending INIT
 	 * signal to kick vCPU out of non-root mode. Nothing needs to be handled
-	 * by the pKVM hypervisor, and also no need to involve the host.
+	 * by the pKVM hypervisor, just need to inform the sender CPU that we
+	 * received INIT. Also no need to involve the host.
 	 */
+	pkvm_lapic_ack_init();
 	return 1;
 }
 #endif
