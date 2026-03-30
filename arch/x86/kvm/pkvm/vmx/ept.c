@@ -213,8 +213,20 @@ static void host_ept_flush_tlb(struct pkvm_pgtable *pgt,
 
 	pkvm_iommu_pt_flush(vaddr, size);
 
-	for_each_host_vcpu_on_initialized_cpu(i, vcpu)
-		pkvm_wait_vcpu_kicked_out(vcpu);
+	while (true) {
+		bool keep_waiting = false;
+
+		for_each_host_vcpu_on_initialized_cpu(i, vcpu) {
+			if (READ_ONCE(vcpu->mode) == EXITING_GUEST_MODE) {
+				keep_waiting = true;
+				break;
+			}
+		}
+		if (!keep_waiting)
+			break;
+
+		cpu_relax();
+	}
 }
 
 static void guest_ept_flush_tlb(struct pkvm_pgtable *pgt,
@@ -233,8 +245,20 @@ static void guest_ept_flush_tlb(struct pkvm_pgtable *pgt,
 		pkvm_kick_vcpu(vcpu);
 	}
 
-	for_each_pkvm_guest_vcpu(i, pkvm_vcpu, pkvm_vm)
-		pkvm_wait_vcpu_kicked_out(&pkvm_vcpu->vcpu);
+	while (true) {
+		bool keep_waiting = false;
+
+		for_each_pkvm_guest_vcpu(i, pkvm_vcpu, pkvm_vm) {
+			if (READ_ONCE(pkvm_vcpu->vcpu.mode) == EXITING_GUEST_MODE) {
+				keep_waiting = true;
+				break;
+			}
+		}
+		if (!keep_waiting)
+			break;
+
+		cpu_relax();
+	}
 
 	pkvm_spin_unlock(&pkvm_vm->lock);
 }
