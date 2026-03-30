@@ -2099,13 +2099,14 @@ void pkvm_handle_host_hypercall(struct kvm_vcpu *vcpu)
 	pkvm_hc_set_ret(vcpu, ret);
 }
 
-void pkvm_kick_vcpu(struct kvm_vcpu *vcpu)
+bool pkvm_kick_vcpu(struct kvm_vcpu *vcpu)
 {
 	/* No need to kick if a vcpu is already out of guest mode */
 	if (kvm_vcpu_exiting_guest_mode(vcpu) != IN_GUEST_MODE)
-		return;
+		return false;
 
 	pkvm_lapic_send_init(READ_ONCE(vcpu->cpu));
+	return true;
 }
 
 void pkvm_wait_vcpu_kicked_out(struct kvm_vcpu *vcpu)

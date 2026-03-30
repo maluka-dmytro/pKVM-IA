@@ -189,6 +189,7 @@ static void host_ept_flush_tlb(struct pkvm_pgtable *pgt,
 			       unsigned long vaddr, unsigned long size)
 {
 	struct kvm_vcpu *vcpu;
+	u64 kicked = 0;		/* FIXME: there may be more than 64 CPUs */
 	int i;
 
 	/*
@@ -208,13 +209,16 @@ static void host_ept_flush_tlb(struct pkvm_pgtable *pgt,
 
 	for_each_host_vcpu_on_initialized_cpu(i, vcpu) {
 		kvm_make_request(KVM_REQ_TLB_FLUSH_CURRENT, vcpu);
-		pkvm_kick_vcpu(vcpu);
+		if (pkvm_kick_vcpu(vcpu))
+			kicked |= 1 << i;
 	}
 
 	pkvm_iommu_pt_flush(vaddr, size);
 
-	for_each_host_vcpu_on_initialized_cpu(i, vcpu)
-		pkvm_wait_vcpu_kicked_out(vcpu);
+	for_each_host_vcpu_on_initialized_cpu(i, vcpu) {
+		if (kicked & (1 << i))
+			pkvm_wait_vcpu_kicked_out(vcpu);
+	}
 }
 
 static void guest_ept_flush_tlb(struct pkvm_pgtable *pgt,
@@ -222,6 +226,7 @@ static void guest_ept_flush_tlb(struct pkvm_pgtable *pgt,
 {
 	struct pkvm_vm *pkvm_vm = pgt_to_pkvm(pgt);
 	struct pkvm_vcpu *pkvm_vcpu;
+	u64 kicked = 0;		/* FIXME: there may be more than 64 vCPUs */
 	int i;
 
 	pkvm_spin_lock(&pkvm_vm->lock);
@@ -230,11 +235,14 @@ static void guest_ept_flush_tlb(struct pkvm_pgtable *pgt,
 		struct kvm_vcpu *vcpu = &pkvm_vcpu->vcpu;
 
 		kvm_make_request(KVM_REQ_TLB_FLUSH_CURRENT, vcpu);
-		pkvm_kick_vcpu(vcpu);
+		if (pkvm_kick_vcpu(vcpu))
+			kicked |= 1 << i;
 	}
 
-	for_each_pkvm_guest_vcpu(i, pkvm_vcpu, pkvm_vm)
-		pkvm_wait_vcpu_kicked_out(&pkvm_vcpu->vcpu);
+	for_each_pkvm_guest_vcpu(i, pkvm_vcpu, pkvm_vm) {
+		if (kicked & (1 << i))
+			pkvm_wait_vcpu_kicked_out(&pkvm_vcpu->vcpu);
+	}
 
 	pkvm_spin_unlock(&pkvm_vm->lock);
 }
