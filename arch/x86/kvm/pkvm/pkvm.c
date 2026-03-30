@@ -2107,6 +2107,12 @@ void pkvm_kick_vcpu(struct kvm_vcpu *vcpu)
 	pkvm_lapic_send_init(READ_ONCE(vcpu->cpu));
 }
 
+void pkvm_wait_vcpu_kicked_out(struct kvm_vcpu *vcpu)
+{
+	while (READ_ONCE(vcpu->mode) == EXITING_GUEST_MODE)
+		cpu_relax();
+}
+
 int pkvm_x86_vendor_init(struct kvm_x86_init_ops *ops)
 {
 	int r;
