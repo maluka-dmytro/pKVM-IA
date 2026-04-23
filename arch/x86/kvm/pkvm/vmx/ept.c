@@ -399,7 +399,7 @@ int pkvm_host_ept_finalize(struct pkvm_pgtable *pgt)
 	return 0;
 }
 
-int pkvm_handle_host_ept_violation(void)
+int pkvm_handle_host_ept_violation(struct kvm_vcpu *vcpu)
 {
 	struct range range, cur;
 	int level, ret = -EPERM;
@@ -415,7 +415,14 @@ int pkvm_handle_host_ept_violation(void)
 	 */
 	if (pkvm_find_addr_range(gpa, &range) || is_pvmfw(gpa) ||
 	    is_iommu_mmio(gpa)) {
+		u32 error_code = PFERR_PRESENT_MASK;
+
 		pkvm_err("Host access to protected memory at 0x%lx\n", gpa);
+
+		if (vmx_get_cpl(vcpu) == 3)
+			error_code |= PFERR_USER_MASK;
+		kvm_queue_exception_e_p(vcpu, PF_VECTOR, error_code,
+					vmcs_readl(GUEST_LINEAR_ADDRESS));
 		return ret;
 	}
 
