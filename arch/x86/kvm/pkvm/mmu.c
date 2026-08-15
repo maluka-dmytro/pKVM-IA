@@ -1038,6 +1038,10 @@ int pkvm_host_donate_hyp(unsigned long phys, unsigned long size, bool clear)
 	BUG_ON(ret);
 
 	set_host_mem_pgstate(phys, size, PKVM_PAGE_NONE, PKVM_ID_HYP);
+
+	ret = pkvm_hyp_mmu_map((unsigned long)__pkvm_va(phys), phys, size,
+			       (u64)pgprot_val(PAGE_KERNEL));
+	WARN_ON_ONCE(ret);
 unlock:
 	pkvm_host_mmu_unlock();
 
@@ -1092,6 +1096,10 @@ int pkvm_host_donate_hyp_share_ro(unsigned long phys, unsigned long size, bool c
 	BUG_ON(ret);
 
 	set_host_mem_pgstate(phys, size, PKVM_PAGE_SHARED_BORROWED, PKVM_ID_HYP);
+
+	ret = pkvm_hyp_mmu_map((unsigned long)__pkvm_va(phys), phys, size,
+			       (u64)pgprot_val(PAGE_KERNEL));
+	WARN_ON_ONCE(ret);
 unlock:
 	pkvm_host_mmu_unlock();
 
@@ -1157,6 +1165,8 @@ void pkvm_hyp_donate_host(unsigned long phys, unsigned long size, bool clear)
 				      host_mmu_pte_prot(true, false), NULL));
 
 	set_host_mem_pgstate(phys, size, PKVM_PAGE_OWNED, PKVM_ID_HOST);
+
+	/* TODO: hyp mmu unmap (with TLB flush!) */
 unlock:
 	pkvm_host_mmu_unlock();
 out:
@@ -1317,7 +1327,10 @@ int pkvm_host_share_hyp(unsigned long phys, unsigned long size)
 		page->host_share_hyp_count++;
 	}
 
-	ret = 0;
+	/* TODO: do it per page if refcount==1 only */
+	ret = pkvm_hyp_mmu_map((unsigned long)__pkvm_va(phys), phys, size,
+					       (u64)pgprot_val(PAGE_KERNEL));
+	WARN_ON_ONCE(ret);
 
 unlock:
 	pkvm_host_mmu_unlock();
@@ -1367,6 +1380,8 @@ void pkvm_host_unshare_hyp(unsigned long phys, unsigned long size)
 
 		page->host_state = PKVM_PAGE_OWNED;
 	}
+
+	/* TODO: hyp mmu unmap (with TLB flush!) */
 unlock:
 	pkvm_host_mmu_unlock();
 out:
