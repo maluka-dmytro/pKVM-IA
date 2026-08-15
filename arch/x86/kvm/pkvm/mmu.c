@@ -499,7 +499,14 @@ static int host_reclaim_guest_walker(struct pkvm_pgtable_visit_ctx *ctx,
 		 * This must be a protected VM's page. Clear its contents
 		 * before returning it to host.
 		 */
+		/*
+		 * TODO: use a fixmap slot like in pKVM-ARM instead of walking
+		 * hyp mmu pgtable every time.
+		 */
+		BUG_ON(pkvm_hyp_mmu_map((unsigned long)__pkvm_va(phys), phys, size,
+					(u64)pgprot_val(PAGE_KERNEL)));
 		pkvm_clear_memory(__pkvm_va(phys), size);
+		/* TODO: hyp mmu unmap (with TLB flush!) */
 		break;
 	case PKVM_PAGE_SHARED_OWNED:
 		BUG_ON(!pkvm_is_protected_vm(kvm));
