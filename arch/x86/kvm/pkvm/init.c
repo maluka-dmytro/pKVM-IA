@@ -114,7 +114,6 @@ static int back_vmemmap(phys_addr_t back_pa)
 static int create_hyp_mmu(const struct pkvm_mem_info infos[], int nr_infos)
 {
 	unsigned long nr_pages = pkvm_hyp_pgtable_pages();
-	struct memblock_region *reg;
 	unsigned int i;
 	int ret;
 
@@ -122,22 +121,7 @@ static int create_hyp_mmu(const struct pkvm_mem_info infos[], int nr_infos)
 	if (ret)
 		return ret;
 
-	/*
-	 * Create mapping for the memory in memblocks, which includes all
-	 * the memory host kernel can see, as well as the reserved memory
-	 * for the pKVM hypervisor.
-	 *
-	 * The virtual address is the same with the kernel direct mapping.
-	 */
-	for (i = 0; i < pkvm_memblock_nr; i++) {
-		reg = &pkvm_memory[i];
-		ret = pkvm_hyp_mmu_map((unsigned long)__pkvm_va(reg->base), reg->base,
-				       reg->size, (u64)pgprot_val(PAGE_KERNEL));
-		if (ret)
-			return ret;
-	}
-
-#ifdef CONFIG_PKVM_X86_DEBUG
+#ifdef CONFIG_PKVM_X86_DEBUG	/* TODO: make debug mode work */
 	/*
 	 * Clone host CR3 page mapping starting from VMALLOC_START for the pKVM
 	 * hypervisor to run the linux kernel's symbols in the root mode. To
@@ -147,16 +131,14 @@ static int create_hyp_mmu(const struct pkvm_mem_info infos[], int nr_infos)
 	pkvm_hyp_mmu_clone_host(VMALLOC_START);
 #else
 	/*
-	 * Map pkvm's TEXT/DATA memory. The virtual address is the same
+	 * Map pkvm's reserved and TEXT/DATA memory. The virtual address is the same
 	 * with the kernel symbol mapping.
 	 */
 	for (i = 0; i < nr_infos; i++) {
-		if (infos[i].type == PKVM_TEXT_DATA) {
-			ret = pkvm_hyp_mmu_map(infos[i].va, infos[i].pa,
-					       infos[i].size, infos[i].prot);
-			if (ret)
-				return ret;
-		}
+		ret = pkvm_hyp_mmu_map(infos[i].va, infos[i].pa,
+				       infos[i].size, infos[i].prot);
+		if (ret)
+			return ret;
 	}
 #endif
 
