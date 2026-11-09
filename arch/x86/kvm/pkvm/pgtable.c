@@ -199,7 +199,7 @@ static int pgtable_try_map_leaf(struct pkvm_pgtable_visit_ctx *ctx,
 
 	if (flush_tlb) {
 		if (ctx->pgt->cap.flush_tlb_lazy)
-			ctx->flush_tlb |= true;
+			ctx->flush_tlb++;
 		else
 			pgt_ops->flush_tlb(ctx->pgt, ctx->addr,
 					   pgt_ops->level_to_size(ctx->level));
@@ -305,6 +305,7 @@ static void pgtable_try_coalesce_leaf(struct pkvm_pgtable_visit_ctx *ctx,
 	 */
 	base_addr = ALIGN_DOWN(ctx->addr, level_size);
 	pgt_ops->flush_tlb(ctx->pgt, base_addr, level_size);
+	ctx->coalesce_cnt++;
 
 	for (i = 0; i < entries; i++)
 		mm_ops->put_page(child);
@@ -373,7 +374,7 @@ static int pgtable_try_unmap_leaf(struct pkvm_pgtable_visit_ctx *ctx,
 	 */
 	if (was_present) {
 		if (ctx->pgt->cap.flush_tlb_lazy)
-			ctx->flush_tlb |= true;
+			ctx->flush_tlb++;
 		else
 			pgt_ops->flush_tlb(ctx->pgt, ctx->addr, size);
 	}
@@ -581,7 +582,8 @@ struct pgt_walk_data {
 	const unsigned long start;
 	const unsigned long end;
 	struct pkvm_pgtable_walker *walker;
-	bool flush_tlb;
+	unsigned int flush_tlb;
+	unsigned int coalesce_cnt;
 	struct list_head teardown_pages;
 };
 
@@ -599,7 +601,8 @@ static int pgtable_visit(struct pgt_walk_data *data, void *ptep, int level)
 		.addr = data->addr,
 		.level = level,
 		.ptep = ptep,
-		.flush_tlb = false,
+		.flush_tlb = 0,
+		.coalesce_cnt = 0,
 		.teardown_pages = LIST_HEAD_INIT(ctx.teardown_pages),
 	};
 	void *child_ptep;
@@ -636,7 +639,8 @@ static int pgtable_visit(struct pgt_walk_data *data, void *ptep, int level)
 	if (walk_flags & PKVM_PGTABLE_WALK_TABLE_POST)
 		ret = walker->cb(&ctx, PKVM_PGTABLE_WALK_TABLE_POST, walker->arg);
 out:
-	data->flush_tlb |= ctx.flush_tlb;
+	data->flush_tlb += ctx.flush_tlb;
+	data->coalesce_cnt += ctx.coalesce_cnt;
 	list_splice_tail(&ctx.teardown_pages, &data->teardown_pages);
 	return ret;
 }
@@ -726,9 +730,11 @@ int pkvm_pgtable_walk(struct pkvm_pgtable *pgt, unsigned long vaddr,
 		.start = ALIGN_DOWN(vaddr, PAGE_SIZE),
 		.end = ALIGN(vaddr + size, PAGE_SIZE),
 		.walker = walker,
-		.flush_tlb = false,
+		.flush_tlb = 0,
+		.coalesce_cnt = 0,
 		.teardown_pages = LIST_HEAD_INIT(data.teardown_pages),
 	};
+	unsigned int teardown_cnt = 0;
 	int ret;
 
 	if (!pgt->root_pa || vaddr + size <= vaddr || data.end <= data.start ||
@@ -750,7 +756,15 @@ int pkvm_pgtable_walk(struct pkvm_pgtable *pgt, unsigned long vaddr,
 
 		list_del(page);
 		pgt->mm_ops->put_page((void *)page);
+		teardown_cnt++;
 	}
+
+	if (data.flush_tlb + teardown_cnt > 1)
+		pr_info("pkvm: %s: flush_tlb=%u teardown_cnt=%u\n", __func__,
+			data.flush_tlb, teardown_cnt);
+
+	if (data.coalesce_cnt > 0)
+		pr_info("pkvm: %s: coalesce_cnt=%u\n", __func__, data.coalesce_cnt);
 
 	return ret;
 }

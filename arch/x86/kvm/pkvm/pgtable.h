@@ -109,7 +109,8 @@ struct pkvm_pgtable_visit_ctx {
 	unsigned long addr;
 	int level;
 	void *ptep;
-	bool flush_tlb;
+	unsigned int flush_tlb;
+	unsigned int coalesce_cnt;
 	struct list_head teardown_pages;
 };
 
