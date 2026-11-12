@@ -806,6 +806,9 @@ int pkvm_pgtable_map(struct pkvm_pgtable *pgt, unsigned long vaddr,
 		.walk_flags = PKVM_PGTABLE_WALK_LEAF | PKVM_PGTABLE_WALK_TABLE_POST,
 	};
 
+	pr_info("%s(root_pa=%lx vaddr=%lx size=%lx phys=%lx prot=%llx)\n", __func__,
+		pgt->root_pa, vaddr, size, phys, prot);
+
 	if (!VALID_PAGE(phys))
 		return -EINVAL;
 
@@ -854,6 +857,9 @@ int pkvm_pgtable_unmap(struct pkvm_pgtable *pgt, unsigned long vaddr,
 		.walk_flags = PKVM_PGTABLE_WALK_LEAF | PKVM_PGTABLE_WALK_TABLE_POST,
 	};
 
+	pr_info("%s(root_pa=%lx vaddr=%lx size=%lx phys=%lx)\n", __func__,
+		pgt->root_pa, vaddr, size, phys);
+
 	return pkvm_pgtable_walk(pgt, vaddr, size, &walker);
 }
 
@@ -888,6 +894,9 @@ int pkvm_pgtable_set_owner(struct pkvm_pgtable *pgt, unsigned long vaddr,
 		.arg = &data,
 		.walk_flags = PKVM_PGTABLE_WALK_LEAF,
 	};
+
+	pr_info("%s(root_pa=%lx vaddr=%lx size=%lx owner=%d)\n", __func__,
+		pgt->root_pa, vaddr, size, owner);
 
 	return pkvm_pgtable_walk(pgt, vaddr, size, &walker);
 }
@@ -1038,6 +1047,9 @@ bool pkvm_pgtable_test_clear_young(struct pkvm_pgtable *pgt, unsigned long vaddr
 		.arg = &data,
 		.walk_flags = PKVM_PGTABLE_WALK_LEAF,
 	};
+
+	pr_info("%s(root_pa=%lx vaddr=%lx size=%lx mkold=%d)\n", __func__,
+		pgt->root_pa, vaddr, size, mkold);
 
 	WARN_ON_ONCE(pkvm_pgtable_walk(pgt, vaddr, size, &walker));
 	return data.young;
